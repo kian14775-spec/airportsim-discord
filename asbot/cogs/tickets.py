@@ -763,8 +763,8 @@ class Tickets(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
         content = payload.data.get("content")
-        if content is None or payload.data.get("author", {}).get("bot"):
-            return
+        if content is None or not payload.data.get("edited_timestamp") or payload.data.get("author", {}).get("bot"):
+            return   # link previews loading also fire this; only real edits have edited_timestamp
         row, copy = await self._copy_of(payload.message_id)
         if not row or not copy or not copy.embeds:
             return
