@@ -27,7 +27,7 @@ from ..renamer import rename_soon
 from .. import transcripts
 
 NOTE_PREFIX = "//"
-GREEN, RED, AMBER, GREY, BLUE = 0x2ECC71, 0xE74C3C, 0xF1C40F, 0x95A5A6, 0x3498DB
+from ..ui import BAD as RED, BRAND as BLUE, GOOD as GREEN, QUIET as GREY, WAIT as AMBER
 NUDGE_AFTER = 30 * 60
 WARN_AFTER = 24 * 3600
 CLOSE_AFTER = 48 * 3600
@@ -79,6 +79,8 @@ def state_of(t) -> tuple[str, str, int]:
     """(dot, words, colour) for the title and control card."""
     if t["status"] == "closed":
         return "⚫", "Closed", GREY
+    if t["status"] == "closing":
+        return "⏳", "Waiting for the member to confirm", AMBER
     if t["priority"] == "urgent":
         return "🔴", "Urgent", RED
     if t["status"] == "waiting":
@@ -94,7 +96,7 @@ def title_of(t, user_name: str) -> str:
 
 
 def tag_names(t) -> list[str]:
-    tags = ["Waiting" if t["status"] == "waiting" else "Open"]
+    tags = ["Waiting" if t["status"] in ("waiting", "closing") else "Open"]
     if t["claimed_by"]:
         tags.append("Claimed")
     if t["priority"] == "urgent":
@@ -159,7 +161,8 @@ async def profile_embed(guild: discord.Guild, user: discord.abc.User, roblox_hin
 # ---------- persistent controls (survive restarts) ----------
 class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t:(?P<action>[a-z]+):(?P<id>\d+)"):
     LABELS = {"claim": ("Claim", discord.ButtonStyle.primary), "dev": ("Send to dev team", discord.ButtonStyle.secondary),
-              "close": ("Close", discord.ButtonStyle.danger), "unban": ("Unban in game", discord.ButtonStyle.success),
+              "close": ("Ask to close", discord.ButtonStyle.success), "force": ("Close now", discord.ButtonStyle.danger),
+              "unban": ("Unban in game", discord.ButtonStyle.success),
               "uclose": ("Close my ticket", discord.ButtonStyle.secondary)}
 
     def __init__(self, action: str, tid: int):
@@ -197,7 +200,11 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
                 allowed_mentions=discord.AllowedMentions(roles=True))
             await cog.refresh(t["id"])
         elif self.action == "close":
-            await interaction.response.send_message("Closing and saving the transcript...")
+            await interaction.response.send_message("Asked the member if it's solved. It closes when they "
+                                                    "confirm, or by itself in 24 hours.")
+            await cog.ask_close(t, member)
+        elif self.action == "force":
+            await interaction.response.send_message("Closing now...")
             await cog.close(t, by=member)
         elif self.action == "unban":
             rid = db.kv_get(f"ticket_roblox:{t['id']}")
@@ -243,6 +250,34 @@ class PrioritySelect(discord.ui.DynamicItem[discord.ui.Select], template=r"asbot
         await cog.refresh(t["id"])
 
 
+class ConfirmClose(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:tc:(?P<id>\d+):(?P<ans>yes|no)"):
+    def __init__(self, tid: int, ans: str):
+        label, style = (("Yes, close it", discord.ButtonStyle.success) if ans == "yes"
+                        else ("No, I still need help", discord.ButtonStyle.secondary))
+        super().__init__(discord.ui.Button(label=label, style=style, custom_id=f"asbot:tc:{tid}:{ans}"))
+        self.tid, self.ans = tid, ans
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]), match["ans"])
+
+    async def callback(self, interaction: discord.Interaction):
+        cog: Tickets = interaction.client.get_cog("Tickets")
+        t = ticket(self.tid)
+        if not t or t["user_id"] != interaction.user.id or t["status"] != "closing":
+            return await interaction.response.send_message("This ticket isn't waiting on you.", ephemeral=True)
+        if self.ans == "yes":
+            await interaction.response.edit_message(content="Great, closing it now.", view=None)
+            return await cog.close(t, by=interaction.user, reason="closed, the member confirmed it's solved")
+        db.run("UPDATE tickets SET status='open', last_activity=? WHERE id=?", db.now(), t["id"])
+        await interaction.response.edit_message(content="Got it, it stays open. Tell us what's still wrong here.",
+                                                view=None)
+        thread = await cog.fetch_thread(t["thread_id"])
+        if thread:
+            await thread.send("↩️ The member says it's **not solved yet**.")
+        await cog.refresh(t["id"])
+
+
 class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rate:(?P<id>\d+):(?P<score>[1-5])"):
     def __init__(self, tid: int, score: int):
         super().__init__(discord.ui.Button(label="★" * score, style=discord.ButtonStyle.secondary,
@@ -267,7 +302,7 @@ class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rat
 
 def staff_view(t) -> discord.ui.View:
     v = discord.ui.View(timeout=None)
-    for a in ("claim", "dev", "close"):
+    for a in ("claim", "dev", "close", "force"):
         v.add_item(TicketButton(a, t["id"]))
     if t["topic"] == "appeal":
         v.add_item(TicketButton("unban", t["id"]))
@@ -405,7 +440,7 @@ class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(SupportView())
-        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, transcripts.ViewButton,
+        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, transcripts.ViewButton,
                               transcripts.HistoryButton)
         self._dm_nag: dict[int, float] = {}
         self.monthly.start()
@@ -453,7 +488,7 @@ class Tickets(commands.Cog):
                 "• Every post is one open ticket. Members talk to the bot in their DMs; you just type in the post.\n"
                 "• Start a message with `//` for a staff-only note the member never sees.\n"
                 "• Title dots: 🟢 new · 🔵 claimed · 🟡 waiting on member · 🔴 urgent.\n"
-                "• Buttons on the top card: Claim, Send to dev team, Close, and a priority menu.\n"
+                "• Buttons: Claim, Send to dev team, Ask to close (the member confirms), Close now, priority.\n"
                 "• `/reply` sends a saved reply. `/ticket_stats` shows this month's numbers.\n"
                 "• Nobody answers in 30 min: Support Team gets one ping. Member silent 48 h: auto-close.\n"
                 "• Closing stores the chat and removes the post. Read old tickets with the View transcript "
@@ -573,6 +608,19 @@ class Tickets(commands.Cog):
             return False
 
     # ---------- closing ----------
+    async def ask_close(self, t, by: discord.Member):
+        db.run("UPDATE tickets SET status='closing', last_activity=? WHERE id=?", db.now(), t["id"])
+        v = discord.ui.View(timeout=None)
+        v.add_item(ConfirmClose(t["id"], "yes"))
+        v.add_item(ConfirmClose(t["id"], "no"))
+        ok = await self.send_to_user(t, embed(f"Is ticket {t['id']:04d} solved?",
+                                              f"{by.display_name} thinks this is sorted. Press a button below. "
+                                              "If we don't hear back, it closes by itself in 24 hours.",
+                                              tone="wait"), view=v)
+        if not ok:   # can't reach them: just close
+            return await self.close(ticket(t["id"]), by=by, reason=f"closed by {by.display_name} (member unreachable)")
+        await self.refresh(t["id"])
+
     async def close(self, t, by: discord.abc.User | None, reason: str | None = None):
         if ticket(t["id"])["status"] == "closed":
             return
@@ -598,7 +646,8 @@ class Tickets(commands.Cog):
         await log_staff(self.guild, f"✅ Ticket {t['id']:04d} · {topic_label(t['topic'])} · <@{t['user_id']}> "
                                     f"{who} · {saved} messages", kind="Tickets", view=v)
 
-    ticket_group = app_commands.Group(name="ticket", description="Read closed tickets (staff)")
+    ticket_group = app_commands.Group(name="ticket", description="Tickets (staff)",
+                                      default_permissions=discord.Permissions(moderate_members=True))
 
     @ticket_group.command(name="view", description="Open a closed ticket by number")
     @staff_only()
@@ -702,13 +751,15 @@ class Tickets(commands.Cog):
             db.run("UPDATE tickets SET warned=1 WHERE id=?", t["id"])
         for t in db.q("SELECT * FROM tickets WHERE status='waiting' AND warned=1 AND last_activity<?", now - CLOSE_AFTER):
             await self.close(t, by=None, reason="auto-closed after 48 h without a reply")
+        for t in db.q("SELECT * FROM tickets WHERE status='closing' AND last_activity<?", now - WARN_AFTER):
+            await self.close(t, by=None, reason="closed, the member didn't answer within 24 h")
 
     @timers.before_loop
     async def _wait_timers(self):
         await self.bot.wait_until_ready()
 
     # ---------- staff commands ----------
-    @app_commands.command(description="Send a saved reply to the member (use inside a ticket)")
+    @ticket_group.command(name="reply", description="Send a saved reply (inside a ticket)")
     @staff_only()
     async def reply(self, interaction: discord.Interaction, name: str):
         t = ticket_for_thread(interaction.channel_id)
@@ -726,7 +777,7 @@ class Tickets(commands.Cog):
         return [app_commands.Choice(name=f"{k}: {v[:60]}", value=k)
                 for k, v in cfg()["support"]["snippets"].items() if current.lower() in k][:25]
 
-    @app_commands.command(description="Close this ticket")
+    @ticket_group.command(name="close", description="Close this ticket now (inside a ticket)")
     @staff_only()
     async def close_ticket(self, interaction: discord.Interaction):
         t = ticket_for_thread(interaction.channel_id)
@@ -735,7 +786,7 @@ class Tickets(commands.Cog):
         await interaction.response.send_message("Closing and saving the transcript...")
         await self.close(t, by=interaction.user)
 
-    @app_commands.command(description="Ticket stats for this month (staff)")
+    @ticket_group.command(name="stats", description="This month's support numbers")
     @staff_only()
     async def ticket_stats(self, interaction: discord.Interaction):
         await interaction.response.send_message(embed=self.stats_embed(dt.datetime.now(dt.timezone.utc)),

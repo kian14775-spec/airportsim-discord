@@ -49,12 +49,9 @@ class Health(commands.Cog):
         except discord.HTTPException:
             pass
 
-    @app_commands.command(description="Is the bot healthy?")
-    async def ping(self, interaction: discord.Interaction):
+    def summary(self) -> str:
         up = int(time.time() - self.started)
-        await interaction.response.send_message(
-            f"Online. Latency {round(self.bot.latency * 1000)} ms, up {up // 3600}h {up % 3600 // 60}m.",
-            ephemeral=True)
+        return f"Online · latency {round(self.bot.latency * 1000)} ms · up {up // 3600}h {up % 3600 // 60}m"
 
 
 async def setup(bot):

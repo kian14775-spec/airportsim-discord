@@ -10,13 +10,12 @@ from __future__ import annotations
 import random
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
-from .. import db
+from .. import db, ui
 from ..core import (cfg, channel, embed, log_staff, role, role_named, roblox_headshot,
-                    roblox_user, roblox_user_by_name, staff_only)
-from ..panels import ensure_panel
+                    roblox_user, roblox_user_by_name)
+from ..panels import drop_panel, ensure_panel
 
 WORDS = ["runway", "taxi", "gate", "cabin", "jet", "tower", "cargo", "radar", "flaps", "pilot",
          "hangar", "apron", "boarding", "terminal", "jetway", "cockpit", "landing", "takeoff"]
@@ -124,26 +123,49 @@ class UsernameModal(discord.ui.Modal, title="Verify with Roblox"):
         await interaction.followup.send(embed=e, view=CheckView(), ephemeral=True)
 
 
+async def start_verify(interaction: discord.Interaction):
+    """Verify button and /help both land here."""
+    link = db.one("SELECT * FROM links WHERE discord_id=?", interaction.user.id)
+    if link:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        problems = await apply_verified(interaction.user, link["roblox_id"], link["roblox_name"])
+        msg = f"You're already verified as **{link['roblox_name']}**."
+        return await interaction.followup.send("\n".join([msg, *problems]), ephemeral=True)
+    verified = role(interaction.guild, "verified")
+    if verified and verified in interaction.user.roles:   # verified earlier, e.g. through Bloxlink
+        return await interaction.response.send_message(
+            "You're already verified, nothing to do. You can still link your Roblox account here so "
+            "support can see it in your tickets.", view=LinkAnywayView(), ephemeral=True)
+    await interaction.response.send_modal(UsernameModal())
+
+
 class WelcomeView(discord.ui.View):
-    def __init__(self):
+    """The one message in rules-and-verify: Verify, help and links on top, role menus below."""
+
+    def __init__(self, guild: discord.Guild | None = None):
         super().__init__(timeout=None)
+        sup = channel(guild, "support") if guild else None
+        if sup:
+            self.add_item(discord.ui.Button(label="Get help", url=sup.jump_url, row=0))
         for label, url in (cfg()["welcome"].get("links") or {}).items():
-            self.add_item(discord.ui.Button(label=label, url=url, row=1))
+            self.add_item(discord.ui.Button(label=label, url=url, row=0))
+        for i, (group, (key, _, _)) in enumerate(ROLE_GROUPS.items(), start=1):
+            if cfg().get(key):
+                sel = RoleGroupSelect(group)
+                sel.row = i
+                self.add_item(sel)
 
     @discord.ui.button(label="Verify", style=discord.ButtonStyle.success, custom_id="asbot:verify:start", row=0)
     async def verify(self, interaction: discord.Interaction, _):
-        link = db.one("SELECT * FROM links WHERE discord_id=?", interaction.user.id)
-        if link:
-            await interaction.response.defer(ephemeral=True, thinking=True)
-            problems = await apply_verified(interaction.user, link["roblox_id"], link["roblox_name"])
-            msg = f"You're already verified as **{link['roblox_name']}**."
-            return await interaction.followup.send("\n".join([msg, *problems]), ephemeral=True)
-        verified = role(interaction.guild, "verified")
-        if verified and verified in interaction.user.roles:   # verified earlier, e.g. through Bloxlink
-            return await interaction.response.send_message(
-                "You're already verified, nothing to do. You can still link your Roblox account here so "
-                "support can see it in your tickets.", view=LinkAnywayView(), ephemeral=True)
-        await interaction.response.send_modal(UsernameModal())
+        await start_verify(interaction)
+
+
+def welcome_card() -> discord.Embed:
+    w = cfg()["welcome"]
+    rules = "\n".join(f"`{i}`  {r}" for i, r in enumerate(w["rules"], 1))
+    return ui.card(w["title"], f"{w['intro']}\n\n**Rules**\n{rules}\n\n"
+                               "**1.** Press **Verify** and link Roblox (under a minute)\n"
+                               "**2.** Pick your pings and platform below", tone="brand")
 
 
 class LinkAnywayView(discord.ui.View):
@@ -197,59 +219,25 @@ class RoleGroupSelect(discord.ui.Select):
         await interaction.response.send_message(text, ephemeral=True)
 
 
-class RolesView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        for group, (key, _, _) in ROLE_GROUPS.items():
-            if cfg().get(key):
-                self.add_item(RoleGroupSelect(group))
-
-
 class Verify(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(WelcomeView())
         bot.add_view(CheckView())
-        bot.add_view(RolesView())
 
     @commands.Cog.listener()
     async def on_ready(self):
         guild = self.bot.get_guild(self.bot.guild_id)
         if guild is None:
             return
-        await ensure_panel("welcome", channel(guild, "welcome"), view=WelcomeView(), embeds=[
-            embed("Verify to unlock the server",
-                  "Read the rules above, then press **Verify** and link your Roblox account. "
-                  "It takes under a minute. Then pick your roles just below.")])
-        await ensure_panel("roles", channel(guild, "welcome"), view=RolesView(), embeds=[
-            embed("Your roles", "Pick what pings you, and what you play on. Change it any time.\n\n" +
-                  "\n".join(f"**{p['label']}**: {p.get('description', '')}" for p in cfg()["ping_roles"]))])
+        await ensure_panel("welcome", channel(guild, "welcome"), view=WelcomeView(guild), embeds=[welcome_card()])
+        await drop_panel(guild, "roles")   # roles used to be a second message; now part of the welcome one
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         link = db.one("SELECT * FROM links WHERE discord_id=?", member.id)
         if link:   # rejoined: verified again straight away
             await apply_verified(member, link["roblox_id"], link["roblox_name"])
-
-    @app_commands.command(description="Link your Roblox account")
-    async def verify(self, interaction: discord.Interaction):
-        await WelcomeView().verify.callback(interaction)
-
-    @app_commands.command(description="Show a member's linked Roblox account")
-    @staff_only()
-    async def whois(self, interaction: discord.Interaction, member: discord.Member):
-        link = db.one("SELECT * FROM links WHERE discord_id=?", member.id)
-        if not link:
-            return await interaction.response.send_message(f"{member.mention} hasn't verified with this bot.",
-                                                           ephemeral=True)
-        e = embed(link["roblox_name"], f"[Roblox profile](https://www.roblox.com/users/{link['roblox_id']}/profile)\n"
-                                       f"ID `{link['roblox_id']}` · linked <t:{int(link['linked_at'])}:R>")
-        await interaction.response.send_message(embed=e, ephemeral=True)
-
-    @app_commands.command(description="Unlink your Roblox account")
-    async def unlink(self, interaction: discord.Interaction):
-        db.run("DELETE FROM links WHERE discord_id=?", interaction.user.id)
-        await interaction.response.send_message("Unlinked. Press Verify in rules-and-verify to link again.", ephemeral=True)
 
     # ---------- staff log threads: joins/leaves and moderation ----------
     @commands.Cog.listener("on_member_join")

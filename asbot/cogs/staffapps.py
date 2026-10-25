@@ -12,7 +12,7 @@ from discord.ext import commands
 from .. import db
 from ..core import cfg, channel, embed, is_staff, log_staff, role_named
 
-GREEN, RED, AMBER = 0x2ECC71, 0xE74C3C, 0xF1C40F
+from ..ui import BAD as RED, GOOD as GREEN, WAIT as AMBER
 
 
 def positions() -> dict[str, list[str]]:

@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import db
-from ..core import channel, embed, game_stats, log, log_staff, role, staff_only
+from ..core import channel, embed, game_stats, log, log_staff, role
 from ..panels import ensure_panel
+from ..ui import BAD, BRAND, GOOD, WAIT
 
-STATES = {"ok": ("All systems normal", 0x2ECC71), "issues": ("Some issues right now", 0xF1C40F),
-          "down": ("Game is down", 0xE74C3C), "maintenance": ("Maintenance", 0x3498DB)}
+STATES = {"ok": ("All systems normal", GOOD), "issues": ("Some issues right now", WAIT),
+          "down": ("Game is down", BAD), "maintenance": ("Maintenance", BRAND)}
 TARGETS = {"announcements": "announcements", "dev-logs": "devlogs", "socials": "socials"}
 PINGS = {"none": None, "announcements": "ping_announcements", "updates": "ping_updates",
          "dev logs": "ping_devlogs", "polls": "ping_polls", "socials": "ping_socials"}
@@ -75,54 +75,29 @@ class News(commands.Cog):
     def guild(self):
         return self.bot.get_guild(self.bot.guild_id)
 
-    @app_commands.command(description="Write and post an announcement")
-    @app_commands.choices(where=[app_commands.Choice(name=k, value=k) for k in TARGETS],
-                          ping=[app_commands.Choice(name=k, value=k) for k in PINGS])
-    @staff_only()
-    async def announce(self, interaction: discord.Interaction, where: str, ping: str = "none"):
+    async def start_announce(self, interaction: discord.Interaction, where: str, ping: str = "none"):
         target = channel(interaction.guild, TARGETS[where])
         if target is None:
             return await interaction.response.send_message("That channel isn't set up.", ephemeral=True)
         r = role(interaction.guild, PINGS[ping]) if PINGS.get(ping) else None
         await interaction.response.send_modal(AnnounceModal(target, r))
 
-    status_group = app_commands.Group(name="status", description="Game status board in #support")
-
-    @status_group.command(name="set", description="Set the game's status")
-    @app_commands.choices(state=[app_commands.Choice(name=v[0], value=k) for k, v in STATES.items()])
-    @staff_only()
-    async def status_set(self, interaction: discord.Interaction, state: str):
+    async def set_state(self, state: str):
         s = status()
         s["state"] = state
         db.kv_set("status", s)
         await self.render_status()
-        await interaction.response.send_message(f"Status: {STATES[state][0]}", ephemeral=True)
 
-    @status_group.command(name="issue", description="Add or remove a known issue")
-    @app_commands.choices(action=[app_commands.Choice(name="add", value="add"),
-                                  app_commands.Choice(name="remove", value="remove"),
-                                  app_commands.Choice(name="clear all", value="clear")])
-    @staff_only()
-    async def status_issue(self, interaction: discord.Interaction, action: str, text: str = ""):
+    async def edit_status(self, add: str = "", remove: str = "", next_update: str | None = None):
         s = status()
-        if action == "add" and text:
-            s["issues"].append(text[:200])
-        elif action == "remove":
-            s["issues"] = [i for i in s["issues"] if text.lower() not in i.lower()] if text else s["issues"][:-1]
-        elif action == "clear":
-            s["issues"] = []
+        if add:
+            s["issues"].append(add[:200])
+        if remove:
+            s["issues"] = [] if remove.lower() == "all" else [i for i in s["issues"] if remove.lower() not in i.lower()]
+        if next_update is not None:
+            s["next_update"] = next_update or None
         db.kv_set("status", s)
         await self.render_status()
-        await interaction.response.send_message("Status board updated.", ephemeral=True)
-
-    @status_group.command(name="next_update", description="Set the next update text, e.g. 'Fri 7 Nov, 6pm UK'")
-    @staff_only()
-    async def status_next(self, interaction: discord.Interaction, when: str = ""):
-        s = status()
-        s["next_update"] = when or None
-        db.kv_set("status", s)
-        await self.render_status()
-        await interaction.response.send_message("Status board updated.", ephemeral=True)
 
     async def render_status(self):
         """One message in #support: live game status on top, the ticket menu below."""

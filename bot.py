@@ -9,11 +9,13 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from asbot import ui
 from asbot.paths import DATA, seed_once
 
 ROOT = Path(__file__).resolve().parent
 COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
-        "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community", "asbot.cogs.forums"]
+        "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community", "asbot.cogs.forums",
+        "asbot.cogs.hub"]
 
 
 def setup_logging() -> None:
@@ -44,6 +46,9 @@ class AirportBot(commands.Bot):
         await self.tree.sync(guild=guild)   # guild sync = commands show up instantly
 
     async def on_ready(self):
+        guild = self.get_guild(self.guild_id)
+        if guild and guild.icon:
+            ui.set_icon(guild.icon.url)   # small server icon in every card's footer
         logging.info("online as %s in %d server(s)", self.user, len(self.guilds))
 
 

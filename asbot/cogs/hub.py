@@ -1,0 +1,285 @@
+"""/help for members and /staff for the team: one tidy panel each instead of many commands.
+Also keeps a live summary card pinned at the top of staff-chat.
+"""
+from __future__ import annotations
+
+import datetime as dt
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from .. import db, ui
+from ..core import channel, staff_only
+from ..panels import ensure_panel
+from .community import template_files
+from .forums import FeedbackModal, RpModal
+from .news import PINGS, STATES, TARGETS
+from .tickets import AppealModal, TopicSelect
+from .verify import ROLE_GROUPS, RoleGroupSelect, start_verify
+
+
+def _private(view_items) -> discord.ui.View:
+    v = discord.ui.View(timeout=600)
+    for item in view_items:
+        v.add_item(item)
+    return v
+
+
+# ---------------- members: /help ----------------
+class HelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=900)
+
+    @discord.ui.button(label="Verify", style=discord.ButtonStyle.success, row=0)
+    async def verify(self, interaction: discord.Interaction, _):
+        await start_verify(interaction)
+
+    @discord.ui.button(label="My roles", style=discord.ButtonStyle.secondary, row=0)
+    async def roles(self, interaction: discord.Interaction, _):
+        items = [RoleGroupSelect(g) for g, (key, _, _) in ROLE_GROUPS.items()]
+        await interaction.response.send_message("Pick what pings you and what you play on:",
+                                                view=_private(items), ephemeral=True)
+
+    @discord.ui.button(label="Get support", style=discord.ButtonStyle.primary, row=0)
+    async def support(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message("What do you need help with?",
+                                                view=_private([TopicSelect(), AppealButton()]), ephemeral=True)
+
+    @discord.ui.button(label="Suggest an idea", style=discord.ButtonStyle.secondary, row=1)
+    async def suggest(self, interaction: discord.Interaction, _):
+        await interaction.response.send_modal(FeedbackModal("Suggestion"))
+
+    @discord.ui.button(label="Report a bug", style=discord.ButtonStyle.secondary, row=1)
+    async def bug(self, interaction: discord.Interaction, _):
+        await interaction.response.send_modal(FeedbackModal("Bug"))
+
+    @discord.ui.button(label="My airline post", style=discord.ButtonStyle.secondary, row=1)
+    async def airline(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message("What kind of server is it?", view=_private([AirlineKind()]),
+                                                ephemeral=True)
+
+    @discord.ui.button(label="Livery templates", style=discord.ButtonStyle.secondary, row=1)
+    async def templates(self, interaction: discord.Interaction, _):
+        files = template_files()
+        if not files:
+            return await interaction.response.send_message("Templates are being added. Check back soon.",
+                                                           ephemeral=True)
+        await interaction.response.send_message("Which aircraft?", view=_private([TemplatePick(files)]),
+                                                ephemeral=True)
+
+
+class AppealButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Appeal a game ban", style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: discord.Interaction):
+        blocked = interaction.client.get_cog("Tickets").blocked_reason(interaction.user)
+        if blocked:
+            return await interaction.response.send_message(blocked, ephemeral=True)
+        await interaction.response.send_modal(AppealModal())
+
+
+class AirlineKind(discord.ui.Select):
+    def __init__(self):
+        super().__init__(placeholder="Airline, airport or cargo?",
+                         options=[discord.SelectOption(label=k) for k in ("Airline", "Airport", "Cargo")])
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(RpModal(self.values[0], hiring=False, logo=None))
+
+
+class TemplatePick(discord.ui.Select):
+    def __init__(self, files):
+        super().__init__(placeholder="Choose an aircraft",
+                         options=[discord.SelectOption(label=p.stem[:100]) for p in files[:25]])
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.client.get_cog("Community").send_template(interaction, self.values[0])
+
+
+# ---------------- staff: /staff ----------------
+ACTIONS = [("announce", "Post an announcement", "announcements, dev-logs or socials"),
+           ("status", "Game status", "All good, issues, down, maintenance"),
+           ("issues", "Known issues and next update", "What shows on the support card"),
+           ("contest", "Livery of the Month", "Start, end or refresh the board"),
+           ("member", "Look up a member", "Roblox link, tickets, roles"),
+           ("stats", "Support numbers", "This month's tickets and ratings"),
+           ("health", "Bot health", "Latency and uptime")]
+
+
+class StaffMenu(discord.ui.Select):
+    def __init__(self):
+        super().__init__(placeholder="What do you want to do?", options=[
+            discord.SelectOption(label=label, value=key, description=desc) for key, label, desc in ACTIONS])
+
+    async def callback(self, interaction: discord.Interaction):
+        bot, act = interaction.client, self.values[0]
+        if act == "announce":
+            return await interaction.response.send_message("Where, and who gets pinged?",
+                                                           view=AnnounceSetup(), ephemeral=True)
+        if act == "status":
+            return await interaction.response.send_message("Set the game status:",
+                                                           view=_private([StatusPick()]), ephemeral=True)
+        if act == "issues":
+            return await interaction.response.send_modal(IssuesModal())
+        if act == "contest":
+            return await interaction.response.send_message("Livery of the Month:", view=ContestView(), ephemeral=True)
+        if act == "member":
+            return await interaction.response.send_message("Who?", view=_private([MemberPick()]), ephemeral=True)
+        if act == "stats":
+            e = bot.get_cog("Tickets").stats_embed(dt.datetime.now(dt.timezone.utc))
+            return await interaction.response.send_message(embed=e, ephemeral=True)
+        if act == "health":
+            return await interaction.response.send_message(bot.get_cog("Health").summary(), ephemeral=True)
+
+
+class AnnounceSetup(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+        self.where, self.ping = next(iter(TARGETS)), "none"
+
+    @discord.ui.select(placeholder="Post in...", options=[discord.SelectOption(label=k) for k in TARGETS])
+    async def pick_where(self, interaction: discord.Interaction, sel: discord.ui.Select):
+        self.where = sel.values[0]
+        await interaction.response.defer()
+
+    @discord.ui.select(placeholder="Ping (optional)", options=[discord.SelectOption(label=k) for k in PINGS])
+    async def pick_ping(self, interaction: discord.Interaction, sel: discord.ui.Select):
+        self.ping = sel.values[0]
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Write it", style=discord.ButtonStyle.primary)
+    async def write(self, interaction: discord.Interaction, _):
+        await interaction.client.get_cog("News").start_announce(interaction, self.where, self.ping)
+
+
+class StatusPick(discord.ui.Select):
+    def __init__(self):
+        super().__init__(placeholder="Game status", options=[
+            discord.SelectOption(label=v[0], value=k) for k, v in STATES.items()])
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.client.get_cog("News").set_state(self.values[0])
+        await interaction.response.send_message(f"Status set: {STATES[self.values[0]][0]}.", ephemeral=True)
+
+
+class IssuesModal(discord.ui.Modal, title="Support card"):
+    add = discord.ui.TextInput(label="Add a known issue", required=False, max_length=200)
+    remove = discord.ui.TextInput(label="Remove issues containing (or 'all')", required=False, max_length=100)
+    nxt = discord.ui.TextInput(label="Next update (blank = leave as is)", required=False, max_length=80,
+                               placeholder="Fri 7 Nov, 6pm UK")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.client.get_cog("News").edit_status(
+            add=self.add.value.strip(), remove=self.remove.value.strip(),
+            next_update=self.nxt.value.strip() if self.nxt.value.strip() else None)
+        await interaction.response.send_message("Support card updated.", ephemeral=True)
+
+
+class ContestView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
+    async def start(self, interaction: discord.Interaction, _):
+        await interaction.client.get_cog("Community").contest_start(interaction)
+
+    @discord.ui.button(label="End and crown winner", style=discord.ButtonStyle.danger)
+    async def end(self, interaction: discord.Interaction, _):
+        await interaction.client.get_cog("Community").contest_end(interaction)
+
+    @discord.ui.button(label="Refresh live board", style=discord.ButtonStyle.secondary)
+    async def refresh(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message("Refreshing.", ephemeral=True)
+        await interaction.client.get_cog("Forums").contest_board()
+
+
+class MemberPick(discord.ui.UserSelect):
+    def __init__(self):
+        super().__init__(placeholder="Pick a member")
+
+    async def callback(self, interaction: discord.Interaction):
+        m = self.values[0]
+        link = db.one("SELECT * FROM links WHERE discord_id=?", m.id)
+        tickets = db.q("SELECT id, status, rating FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 5", m.id)
+        roblox = (f"[{link['roblox_name']}](https://www.roblox.com/users/{link['roblox_id']}/profile) · "
+                  f"linked <t:{int(link['linked_at'])}:R>") if link else "Not linked"
+        tl = ", ".join(f"{t['id']:04d}{' ★' + str(t['rating']) if t['rating'] else ''}" for t in tickets) or "None"
+        joined = f"<t:{int(m.joined_at.timestamp())}:R>" if getattr(m, "joined_at", None) else "-"
+        e = ui.card(m.display_name, ui.kv(("Discord", m.mention), ("Roblox", roblox), ("Joined", joined),
+                                          ("Tickets", tl)), thumb=m.display_avatar.url)
+        from ..transcripts import HistoryButton
+        v = discord.ui.View(timeout=600)
+        if tickets:
+            v.add_item(HistoryButton(m.id))
+        await interaction.response.send_message(embed=e, view=v, ephemeral=True)
+
+
+# ---------------- cog ----------------
+class Hub(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.summary.start()
+
+    def cog_unload(self):
+        self.summary.cancel()
+
+    @property
+    def guild(self) -> discord.Guild:
+        return self.bot.get_guild(self.bot.guild_id)
+
+    @app_commands.command(description="Everything you can do here, in one place")
+    async def help(self, interaction: discord.Interaction):
+        e = ui.card("How can we help?",
+                    "**Verify** your Roblox account · set **your roles** · **get support** from the team\n"
+                    "**Suggest** ideas or **report bugs** · post **your airline** · grab **livery templates**",
+                    tone="brand")
+        await interaction.response.send_message(embed=e, view=HelpView(), ephemeral=True)
+
+    @app_commands.command(description="Staff tools")
+    @app_commands.default_permissions(moderate_members=True)
+    @staff_only()
+    async def staff(self, interaction: discord.Interaction):
+        e = ui.card("Staff tools", "Pick what you want to do. Everything here only shows to you.", tone="brand")
+        await interaction.response.send_message(embed=e, view=_private([StaffMenu()]), ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        key = f"joins:{dt.date.today():%Y-%m-%d}"
+        db.kv_set(key, db.kv_get(key, 0) + 1)
+
+    @tasks.loop(minutes=5)
+    async def summary(self):
+        ch = channel(self.guild, "staff_chat") if self.guild else None
+        if not ch:
+            return
+        q = lambda sql, *a: db.one(sql, *a)["n"]
+        day = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        players = getattr(self.bot.get_cog("News"), "players", None)
+        open_n = q("SELECT COUNT(*) n FROM tickets WHERE status NOT IN ('closed')")
+        need = q("SELECT COUNT(*) n FROM tickets WHERE status='open'")
+        urgent = q("SELECT COUNT(*) n FROM tickets WHERE status!='closed' AND priority='urgent'")
+        apps = q("SELECT COUNT(*) n FROM applications WHERE status='pending'")
+        verified = q("SELECT COUNT(*) n FROM links WHERE linked_at>=?", day)
+        joins = db.kv_get(f"joins:{dt.date.today():%Y-%m-%d}", 0)
+        inbox = channel(self.guild, "inbox")
+        tone = "bad" if urgent else ("wait" if need else "good")
+        e = ui.card("Right now", ui.kv(
+            ("Tickets open", f"{open_n}" + (f" · **{need} need a reply**" if need else " · all answered")),
+            ("Urgent", str(urgent) if urgent else "none"),
+            ("Applications waiting", str(apps)),
+            ("Players in game", f"{players:,}" if players is not None else "-"),
+            ("Today", f"{joins} joined · {verified} verified")), tone=tone)
+        e.timestamp = discord.utils.utcnow()
+        if inbox:
+            e.add_field(name="​", value=f"[Open the inbox]({inbox.jump_url})", inline=False)
+        await ensure_panel("staff_summary", ch, embeds=[e], pin=True)
+
+    @summary.before_loop
+    async def _ready(self):
+        await self.bot.wait_until_ready()
+
+
+async def setup(bot):
+    await bot.add_cog(Hub(bot))

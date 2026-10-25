@@ -189,20 +189,15 @@ class Community(commands.Cog):
             except discord.HTTPException as e:
                 log.warning("templates post edit: %s", e)
 
-    @app_commands.command(description="Get a livery template sent to you")
-    async def template(self, interaction: discord.Interaction, aircraft: str):
+    async def send_template(self, interaction: discord.Interaction, aircraft: str):
         match = next((p for p in template_files() if p.stem.lower() == aircraft.lower()), None)
         if not match:
             return await interaction.response.send_message("No template with that name yet.", ephemeral=True)
         await interaction.response.send_message(f"Here's the **{match.stem}** template.",
                                                 file=discord.File(match), ephemeral=True)
 
-    @template.autocomplete("aircraft")
-    async def _tpl_names(self, interaction, current: str):
-        return [app_commands.Choice(name=p.stem, value=p.stem) for p in template_files()
-                if current.lower() in p.stem.lower()][:25]
-
-    @app_commands.command(description="Add or replace a livery template (staff)")
+    @app_commands.command(description="Add or replace a livery template")
+    @app_commands.default_permissions(moderate_members=True)
     @staff_only()
     async def template_add(self, interaction: discord.Interaction, name: str, file: discord.Attachment):
         ext = Path(file.filename).suffix.lower()
@@ -217,10 +212,6 @@ class Community(commands.Cog):
         await self.ensure_templates_post()
         await interaction.response.send_message(f"Template **{safe}** saved.", ephemeral=True)
 
-    contest = app_commands.Group(name="contest", description="Livery of the Month")
-
-    @contest.command(name="start", description="Start this month's Livery of the Month")
-    @staff_only()
     async def contest_start(self, interaction: discord.Interaction):
         db.kv_set("contest_start", db.now())
         forum = channel(interaction.guild, "liveries")
@@ -231,8 +222,6 @@ class Community(commands.Cog):
             await ann.send(embed=embed("Livery of the Month", text))
         await interaction.response.send_message("Contest started.", ephemeral=True)
 
-    @contest.command(name="end", description="Count the votes and crown the winner")
-    @staff_only()
     async def contest_end(self, interaction: discord.Interaction):
         start = db.kv_get("contest_start")
         forum = channel(interaction.guild, "liveries")

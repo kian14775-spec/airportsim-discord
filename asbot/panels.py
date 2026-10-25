@@ -24,7 +24,7 @@ async def ensure_panel(name: str, channel: discord.abc.Messageable | None, *, em
             return msg
         except discord.NotFound:
             pass
-    msg = await channel.send(embeds=embeds, view=view)
+    msg = await channel.send(embeds=embeds, view=view, allowed_mentions=discord.AllowedMentions.none())
     db.set_panel(name, channel.id, msg.id)
     if pin:
         try:
@@ -32,3 +32,19 @@ async def ensure_panel(name: str, channel: discord.abc.Messageable | None, *, em
         except discord.HTTPException:
             pass
     return msg
+
+
+async def drop_panel(guild: discord.Guild, name: str) -> None:
+    """Remove a panel the bot no longer uses (the bot's own message only)."""
+    row = db.panel(name)
+    if not row:
+        return
+    ch = guild.get_channel(row["channel_id"])
+    if ch:
+        try:
+            msg = await ch.fetch_message(row["message_id"])
+            if msg.author.id == guild.me.id:
+                await msg.delete()
+        except discord.HTTPException:
+            pass
+    db.run("DELETE FROM panels WHERE name=?", name)

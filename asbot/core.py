@@ -21,12 +21,11 @@ def cfg() -> dict:
         return yaml.safe_load(f)
 
 
-def color() -> discord.Colour:
-    return discord.Colour(int(cfg()["brand_color"].lstrip("#"), 16))
-
-
-def embed(title: str | None = None, description: str | None = None, **kw) -> discord.Embed:
-    return discord.Embed(title=title, description=description, colour=kw.pop("colour", color()), **kw)
+def embed(title: str | None = None, description: str | None = None, *, colour: discord.Colour | None = None,
+          tone: str = "neutral", **kw) -> discord.Embed:
+    """Every bot message goes through ui.card, so they all share one look."""
+    from . import ui
+    return ui.card(title, description, tone=colour.value if colour else tone, **kw)
 
 
 def channel(guild: discord.Guild, key: str):
@@ -66,7 +65,10 @@ def staff_only():
     return discord.app_commands.check(pred)
 
 
-LOG_KINDS = ("Verifications", "Tickets", "Applications", "Moderation", "Joins and leaves", "Bot")
+# #logs has three threads; older names map onto them
+LOG_THREADS = {"Verifications": "Members", "Joins and leaves": "Members", "Members": "Members",
+               "Tickets": "Tickets and applications", "Applications": "Tickets and applications",
+               "Moderation": "Moderation", "Bot": "Moderation"}
 
 
 async def _log_thread(guild: discord.Guild, kind: str) -> discord.abc.Messageable | None:
@@ -91,7 +93,7 @@ async def _log_thread(guild: discord.Guild, kind: str) -> discord.abc.Messageabl
 
 async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) -> None:
     try:
-        target = await _log_thread(guild, kind if kind in LOG_KINDS else "Bot")
+        target = await _log_thread(guild, LOG_THREADS.get(kind, "Moderation"))
         if target:
             await target.send(text, allowed_mentions=discord.AllowedMentions.none(), **kw)
     except discord.HTTPException as e:

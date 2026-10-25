@@ -17,7 +17,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import db
-from ..core import channel, embed, log, staff_only
+from ..core import channel, embed, log
 from ..renamer import rename_soon
 from .community import UPVOTE, star
 
@@ -284,12 +284,6 @@ class Forums(commands.Cog):
                     await msg.edit(content=text)
         except discord.HTTPException as e:
             log.warning("contest board: %s", e)
-
-    @app_commands.command(description="Refresh the live Livery of the Month board now (staff)")
-    @staff_only()
-    async def contest_refresh(self, interaction: discord.Interaction):
-        await interaction.response.send_message("Refreshing.", ephemeral=True)
-        await self.contest_board()
 
     @weekly.before_loop
     @daily.before_loop
