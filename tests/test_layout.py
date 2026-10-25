@@ -113,10 +113,11 @@ def test_old_server_reuses_and_archives():
         20: ChannelSnap(20, "COMMUNITY", "category", position=1),
         21: ChannelSnap(21, "chat", "text", parent=20, position=0),
         22: ChannelSnap(22, "scheduled-flights", "announcement", parent=20, position=1),
+        30: ChannelSnap(30, "ticket-0012", "text", parent=None, position=5),
     }
     p = plan(lay, snap, {}, archive_extras=True)
     assert p.matches["ch:welcome"] == 11 and p.matches["ch:chat"] == 21
-    assert {c.id for c in p.extras if c.type != "category"} == {12, 22}
+    assert {c.id for c in p.extras if c.type != "category"} == {12, 22, 30}
     state = run(execute(p, lay, FakeBackend(snap), {}, log=lambda _: None))
     archive = state["cat:_archive"]
     assert snap.channels[12].parent == archive and snap.channels[22].parent == archive

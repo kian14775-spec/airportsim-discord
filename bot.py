@@ -10,7 +10,8 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
-COGS = ["asbot.cogs.admin", "asbot.cogs.health"]
+COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
+        "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community"]
 
 
 def setup_logging() -> None:

@@ -11,20 +11,27 @@
 # Perms: a category's `perms` preset applies to all its channels unless a channel
 # sets its own. Presets are at the bottom.
 
-roles:  # top to bottom; the bot creates missing ones and keeps settings in sync
-  - key: staff
-    name: Staff
-    color: "#5865F2"
-    hoist: true
-    permissions: [kick_members, ban_members, moderate_members, manage_messages,
-                  manage_threads, manage_nicknames, view_audit_log, mention_everyone]
-  - key: verified
-    name: Verified
-    color: null
-  - {key: ping_announcements, name: Announcements Ping}
-  - {key: ping_updates,       name: Updates Ping}
-  - {key: ping_devlogs,       name: Dev Logs Ping}
-  - {key: ping_polls,         name: Polls Ping}
+roles:  # top to bottom. Existing roles are only referenced (name only = the bot never
+        # changes their colour or permissions). Missing ones get created.
+  - {key: founder,      name: Founder}
+  - {key: owner,        name: Owner}
+  - {key: co_owner,     name: Co Owner}
+  - {key: board,        name: Airport Board}
+  - {key: developer,    name: Developer}
+  - {key: moderator,    name: Server Moderator}
+  - {key: trial_mod,    name: Trial Moderator}
+  - {key: support_team, name: Support Team}
+  - {key: verified,     name: Traveler}          # given on verify (Bloxlink or the bot)
+  - {key: ping_announcements, name: "| Announcements |"}
+  - {key: ping_devlogs,       name: "| Development |"}
+  - {key: ping_socials,       name: "| Social Media |"}
+  - {key: ping_updates,       name: "| Updates |"}
+  - {key: ping_polls,         name: "| Polls |"}
+  - {key: livery_winner,      name: Livery of the Month, color: "#F1C40F"}
+
+# Role groups usable in presets like a single role.
+groups:
+  staff: [founder, owner, co_owner, board, developer, moderator, trial_mod, support_team]
 
 categories:
   - key: start
@@ -98,13 +105,13 @@ categories:
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: staff-chat}
-      - {key: logs,         name: logs}
+      - {key: staff_chat,   name: staff-chat, was: [moderator-only]}
+      - {key: logs,         name: logs, was: [mod-logs]}
       - key: inbox
         name: inbox
         type: forum
         topic: Every support ticket is a post here.
-        tags: [Open, Claimed, Waiting, Closed]
+        tags: [Open, Claimed, Waiting, Dev team, Appeal, Closed]
       - {key: applications, name: applications}
 
 # Permission presets. Role names: @everyone, or any role key/name above.

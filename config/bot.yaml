@@ -1,0 +1,95 @@
+# Bot settings and texts. Change anything here, then restart the bot (or tell Claude).
+
+game:
+  name: Airport Simulator
+  universe_id: 8888610095
+  place_id: 96895507707354
+  group_id: 35719109
+  link: https://www.roblox.com/games/96895507707354
+
+brand_color: "#5865F2"
+
+welcome:
+  title: Welcome to Airport Simulator
+  intro: >-
+    The official community for Airport Simulator on Roblox. Verify below to unlock the
+    server, then grab your roles in #roles.
+  rules:
+    - Be respectful. No harassment, hate speech or discrimination.
+    - No spam, self-promo or advertising outside the channels made for it.
+    - Keep it safe for everyone. No NSFW, gore or shock content.
+    - No exploiting, cheating or sharing exploits.
+    - Use the right channel. Support questions go to #support.
+    - Don't ping staff for no reason. Open a ticket instead.
+    - Follow Discord's Terms of Service and Roblox's Community Standards.
+    - Staff have the final say.
+  links:
+    Play the game: https://www.roblox.com/games/96895507707354
+    Roblox group: https://www.roblox.com/communities/35719109
+
+# Ping roles offered in #roles (layout role keys)
+ping_roles:
+  - {role: ping_announcements, label: Announcements, description: Big news and events}
+  - {role: ping_updates,       label: Updates,       description: New update released}
+  - {role: ping_devlogs,       label: Dev logs,      description: Sneak peeks and progress}
+  - {role: ping_polls,         label: Polls,         description: Vote on what comes next}
+  - {role: ping_socials,       label: Socials,       description: New posts on our socials}
+
+# Support: topics in the ticket menu. `answers` are tried before a ticket opens.
+support:
+  topics:
+    - {key: help,     label: Game help,       description: Stuck or confused in game}
+    - {key: bug,      label: Bug or glitch,   description: Something is broken}
+    - {key: purchase, label: Purchase issue,  description: Robux spent, item missing}
+    - {key: report,   label: Report a player, description: Exploiting or breaking rules}
+    - {key: other,    label: Something else,  description: Anything not listed}
+  answers:   # keyword matches -> instant answer (fix-it-first)
+    - keywords: [rejoin, stuck, loading, frozen, black screen]
+      answer: Leave and rejoin the game, then try a different server. Most loading problems clear up after that.
+    - keywords: [gamepass, game pass, bought, purchase, robux, didn't get, did not get]
+      answer: Purchases can take a minute to appear. Rejoin the game once. If it's still missing after that, open a ticket and include the item name.
+    - keywords: [livery, template]
+      answer: All livery templates are in the pinned Templates post in #liveries, or use /template in any channel.
+    - keywords: [private server, rp server, airline]
+      answer: Player airlines and private servers are listed in #rp-servers. Owners can make one post there for their server.
+  queue_eta_fallback_min: 15
+  snippets:   # /reply <name> inside a ticket
+    hello: Hi! Thanks for reaching out, I'm looking into this now.
+    rejoin: Please leave the game fully and rejoin, then let us know if it still happens.
+    username: Could you send your Roblox username and a screenshot of the problem?
+    fixed: This should be fixed now. Rejoin the game and let us know if it's still happening.
+    closing: Since we haven't heard back, we'll close this ticket. Open a new one any time.
+
+appeals:
+  enabled: true
+
+applications:
+  positions:   # name -> questions (max 5 each, Discord form limit)
+    Support Team:
+      - How old are you?
+      - Why do you want to join the Support Team?
+      - How active are you in the game and the server (hours per week)?
+      - Have you helped run a community before? Tell us about it.
+    Moderator:
+      - How old are you?
+      - Why do you want to be a moderator?
+      - A member is spamming slurs in #chat. What do you do, step by step?
+      - How active are you per week, and what's your timezone?
+  accept_roles:   # position -> existing role name given on accept
+    Support Team: Support Team
+    Moderator: Trial Moderator
+
+# Roles that count as staff for tickets/tools (besides the layout's Staff role)
+staff_role_names: [Founder, Owner, Co Owner, Admin, Developer, Server Moderator, Trial Moderator, Support Team]
+dev_role_name: Developer
+
+# Discord perks in game (bot writes them to a DataStore via Open Cloud)
+perks:
+  enabled: true
+  datastore: DiscordPerks   # key = Roblox user id; needs ROBLOX_OPENCLOUD_KEY in .env
+
+livery_contest:
+  vote_emoji: "⭐"
+
+party:
+  name_format: "{name}'s party"

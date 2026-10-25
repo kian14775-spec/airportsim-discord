@@ -1,13 +1,17 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-10-25)
-State: layout-as-code engine + bot core DONE and tested offline (7 tests). Not run against Discord yet.
-Layout = layout/server.yaml (locked draft, 12 public channels). Features list = Claude Coding/Discord Server Revamp/PLAN.md.
+## RESUME HERE (2026-10-25, s2)
+State: LIVE on the Airport Simulator server (guild 1347984080842788914). Layout applied (server matches
+layout/server.yaml; pre-change backup in backups/). All features built: verify, roles panel, inbox tickets
+(+triage, profile, queue, ratings, saved replies, notes, dev handoff, monthly leaderboard), appeals,
+applications, /announce, status board + player count, /suggest /bug + shipped DMs, templates + Livery of
+the Month, party voice, perks writer. tools/selftest.py = 45/50 PASS (the 5 fails = role height).
+Bot currently runs on Kian's PC (background process from the Claude session), NOT 24/7 yet.
 Next:
-1. Kian does SETUP.md steps 1-3 (bot token + GUILD_ID in .env, Community on, Oracle VM). He never pastes the token in chat.
-2. `python layout.py preview` on a test server, then the real one; apply (`--archive-extras` hides old channels, never deletes).
-3. Build features as cogs in asbot/cogs/ (v1: verify, roles panel, inbox tickets + fix-it-first triage, status board).
-Blockers: none on our side; waiting for Kian's setup.
+1. Kian: drag the bot role "Airport Simulator" above Traveler + Unverified + the | X | ping roles; rerun tools/selftest.py.
+2. Kian: reset the bot token (it was printed once in chat) and paste the new one in .env; Oracle VM per SETUP.md -> deploy\deploy.ps1 -FirstTime.
+3. Kian: Open Cloud key (group-owned, Airport Simulator: user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY (appeals ban info/unban, perks). Game-side perks script not installed yet.
+4. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots (replaced); click-test verify + a ticket with a real account.
 
 ## How layout changes work
 Kian says what to change -> edit layout/server.yaml (keep `key`, add old names to `was`) ->
@@ -21,3 +25,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 
 ## Log
 - 2026-10-25 s1: layout + bot features locked in chat; built layout engine, bot core, Oracle deploy; tests pass.
+- 2026-10-25 s2: found old token in ~/my-bot/.env (same bot app); mapped layout onto existing roles (Traveler=verified, staff group); applied live, archived 15 old ticket channels; built all features; selftest 45/50.

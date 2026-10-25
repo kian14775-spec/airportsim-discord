@@ -59,6 +59,7 @@ class Layout:
     roles: list[RoleSpec]
     categories: list[CategorySpec]
     presets: dict[str, Overwrites]
+    groups: dict[str, list[str]] = field(default_factory=dict)
 
 
 def norm(name: str) -> str:
@@ -99,7 +100,18 @@ def _parse_roles(raw_roles: list[dict]) -> list[RoleSpec]:
     return roles
 
 
-def _parse_presets(raw: dict, roles: list[RoleSpec]) -> dict[str, Overwrites]:
+def _parse_groups(raw: dict, roles: list[RoleSpec]) -> dict[str, list[str]]:
+    keys = {r.key for r in roles}
+    for g, members in (raw or {}).items():
+        if g in keys:
+            raise LayoutError(f"group '{g}' has the same key as a role")
+        bad = [k for k in members if k not in keys]
+        if bad:
+            raise LayoutError(f"group {g}: unknown role key(s) {bad}")
+    return {g: list(m) for g, m in (raw or {}).items()}
+
+
+def _parse_presets(raw: dict, roles: list[RoleSpec], groups: dict[str, list[str]]) -> dict[str, Overwrites]:
     by_name = {norm(r.name): r.key for r in roles}
     keys = {r.key for r in roles}
     presets: dict[str, Overwrites] = {}
@@ -107,15 +119,19 @@ def _parse_presets(raw: dict, roles: list[RoleSpec]) -> dict[str, Overwrites]:
         ow: Overwrites = {}
         for target, rule in (targets or {}).items():
             if target == EVERYONE:
-                ref = EVERYONE
+                refs = [EVERYONE]
+            elif target in groups:
+                refs = groups[target]
             elif target in keys:
-                ref = target
+                refs = [target]
             elif norm(target) in by_name:
-                ref = by_name[norm(target)]
+                refs = [by_name[norm(target)]]
             else:
-                raise LayoutError(f"preset {pname}: role '{target}' is not in roles")
+                raise LayoutError(f"preset {pname}: role '{target}' is not in roles or groups")
             where = f"preset {pname} / {target}"
-            ow[ref] = (perm_bits(rule.get("allow"), where), perm_bits(rule.get("deny"), where))
+            bits = (perm_bits(rule.get("allow"), where), perm_bits(rule.get("deny"), where))
+            for ref in refs:
+                ow[ref] = bits
         presets[pname] = ow
     return presets
 
@@ -130,7 +146,8 @@ def _preset(presets: dict[str, Overwrites], name: str | None, where: str) -> Ove
 
 def parse(data: dict) -> Layout:
     roles = _parse_roles(data.get("roles"))
-    presets = _parse_presets(data.get("presets"), roles)
+    groups = _parse_groups(data.get("groups"), roles)
+    presets = _parse_presets(data.get("presets"), roles, groups)
     cats, keys = [], {"category": set(), "channel": set()}
 
     def claim(key: str, kind: str = "channel"):
@@ -168,7 +185,7 @@ def parse(data: dict) -> Layout:
                 was=_was(ch),
             ))
         cats.append(CategorySpec(key=ckey, name=c["name"], overwrites=cat_ow, channels=chans, was=_was(c)))
-    return Layout(roles=roles, categories=cats, presets=presets)
+    return Layout(roles=roles, categories=cats, presets=presets, groups=groups)
 
 
 def load(path: str | Path) -> Layout:

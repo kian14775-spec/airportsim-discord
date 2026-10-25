@@ -128,6 +128,10 @@ class DiscordBackend:
         await ch.edit(reason=self.reason, **kw)
 
     async def reorder(self, order) -> None:
-        payload = [{"id": i, "position": p, "parent_id": parent, "lock_permissions": False}
-                   for i, p, parent in order]
+        # Discord only allows one parent change per bulk call, so move strays one by one first
+        for i, _, parent in order:
+            ch = self.guild.get_channel(i)
+            if ch is not None and not isinstance(ch, discord.CategoryChannel) and ch.category_id != parent:
+                await ch.edit(category=self.guild.get_channel(parent), reason=self.reason)
+        payload = [{"id": i, "position": p} for i, p, _ in order]
         await self.guild._state.http.bulk_channel_update(self.guild.id, payload, reason=self.reason)

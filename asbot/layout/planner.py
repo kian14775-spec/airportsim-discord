@@ -118,7 +118,9 @@ def _ow_text(want: Overwrites, have: dict[str, tuple[int, int]]) -> str:
 
 
 def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
-         archive_extras: bool = False) -> Plan:
+         archive_extras: bool = False, ignore: set[int] | None = None) -> Plan:
+    """`ignore`: channel ids the bot manages itself (party voice channels)."""
+    ignore = ignore or set()
     state = state or {}
     m = _Matcher(snap, state)
     actions: list[Action] = []
@@ -205,9 +207,10 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
 
     # ---- leftovers ----
     managed_ids = set(matches.values())
+    archive_id = state.get(cat_ref(ARCHIVE_KEY))
     extras = sorted((c for c in snap.channels.values()
-                     if c.id not in managed_ids and c.id != state.get(cat_ref(ARCHIVE_KEY))
-                     and not (c.type != "category" and c.parent == state.get(cat_ref(ARCHIVE_KEY)))),
+                     if c.id not in managed_ids and c.id not in ignore
+                     and not (archive_id and (c.id == archive_id or c.parent == archive_id))),
                     key=lambda c: (c.type != "category", c.position))
     movable = [c for c in extras if c.type != "category"]
     if archive_extras and movable:

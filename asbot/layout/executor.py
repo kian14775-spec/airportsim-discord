@@ -81,5 +81,4 @@ def _view_bit() -> int:
 
 
 def _staff_view(layout: Layout) -> Overwrites:
-    staff = next((r.key for r in layout.roles if r.key == "staff"), None)
-    return {staff: (_view_bit(), 0)} if staff else {}
+    return {k: (_view_bit(), 0) for k in layout.groups.get("staff", [])}
