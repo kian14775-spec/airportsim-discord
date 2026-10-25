@@ -76,7 +76,7 @@ async def finish_link(interaction: discord.Interaction, roblox_id: int, roblox_n
         e.set_thumbnail(url=thumb)
     if problems:
         e.add_field(name="Heads up", value="\n".join(problems), inline=False)
-    roles_ch = channel(member.guild, "roles")
+    roles_ch = channel(member.guild, "welcome")
     if roles_ch:
         e.add_field(name="Next", value=f"Pick your ping roles in {roles_ch.mention}.", inline=False)
     await interaction.followup.send(embed=e, ephemeral=True)
@@ -89,7 +89,7 @@ async def finish_link(interaction: discord.Interaction, roblox_id: int, roblox_n
 async def welcome_dm(member: discord.Member) -> None:
     """One short DM after verifying, with the places worth knowing."""
     g, game = member.guild, cfg()["game"]
-    spots = [(k, label) for k, label in (("roles", "pick your pings"), ("support", "get help"),
+    spots = [(k, label) for k, label in (("welcome", "pick your pings"), ("support", "get help"),
                                           ("chat", "say hi"), ("rp_servers", "find a player airline"))
              if channel(g, k)]
     lines = [f"{channel(g, k).mention}: {label}" for k, label in spots]
@@ -155,7 +155,7 @@ class LinkAnywayView(discord.ui.View):
         await interaction.response.send_modal(UsernameModal())
 
 
-# Role menus in #roles. "pings" lets you pick several, "platform" one.
+# Role menus under the verify panel in rules-and-verify. "pings" lets you pick several, "platform" one.
 ROLE_GROUPS = {"pings": ("ping_roles", "Choose what pings you", True),
                "platform": ("platform_roles", "What do you play on?", False)}
 
@@ -220,8 +220,8 @@ class Verify(commands.Cog):
         await ensure_panel("welcome", channel(guild, "welcome"), view=WelcomeView(), embeds=[
             embed("Verify to unlock the server",
                   "Read the rules above, then press **Verify** and link your Roblox account. "
-                  "It takes under a minute.\n\nNeed help? Verify first, then use #support.")])
-        await ensure_panel("roles", channel(guild, "roles"), view=RolesView(), embeds=[
+                  "It takes under a minute. Then pick your roles just below.")])
+        await ensure_panel("roles", channel(guild, "welcome"), view=RolesView(), embeds=[
             embed("Your roles", "Pick what pings you, and what you play on. Change it any time.\n\n" +
                   "\n".join(f"**{p['label']}**: {p.get('description', '')}" for p in cfg()["ping_roles"]))])
 
@@ -249,7 +249,7 @@ class Verify(commands.Cog):
     @app_commands.command(description="Unlink your Roblox account")
     async def unlink(self, interaction: discord.Interaction):
         db.run("DELETE FROM links WHERE discord_id=?", interaction.user.id)
-        await interaction.response.send_message("Unlinked. Press Verify in #welcome to link again.", ephemeral=True)
+        await interaction.response.send_message("Unlinked. Press Verify in rules-and-verify to link again.", ephemeral=True)
 
     # ---------- staff log threads: joins/leaves and moderation ----------
     @commands.Cog.listener("on_member_join")

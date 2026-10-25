@@ -100,11 +100,11 @@ def test_rename_keeps_same_channel():
     state = sync(lay, snap, {})
     chat_id = state["ch:chat"]
     lay2 = copy.deepcopy(lay)
-    next(c for cat in lay2.categories for c in cat.channels if c.key == "chat").name = "general"
+    next(c for cat in lay2.categories for c in cat.channels if c.key == "chat").name = "hangout"
     p = plan(lay2, snap, state)
     assert [a.op for a in p.changes] == ["edit_channel"]
     state = run(execute(p, lay2, FakeBackend(snap), state, log=lambda _: None))
-    assert state["ch:chat"] == chat_id and snap.channels[chat_id].name == "general"
+    assert state["ch:chat"] == chat_id and snap.channels[chat_id].name == "hangout"
 
 
 def test_old_server_reuses_and_archives():

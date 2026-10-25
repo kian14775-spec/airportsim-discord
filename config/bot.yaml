@@ -13,7 +13,7 @@ welcome:
   title: Welcome to Airport Simulator
   intro: >-
     The official community for Airport Simulator on Roblox. Verify below to unlock the
-    server, then grab your roles in #roles.
+    server, then pick your roles just below it.
   rules:
     - Be respectful. No harassment, hate speech or discrimination.
     - No spam, self-promo or advertising outside the channels made for it.
@@ -27,7 +27,7 @@ welcome:
     Play the game: https://www.roblox.com/games/96895507707354
     Roblox group: https://www.roblox.com/communities/35719109
 
-# Ping roles offered in #roles (layout role keys)
+# Ping roles in the roles menu (layout role keys)
 ping_roles:
   - {role: ping_announcements, label: Announcements, description: Big news and events}
   - {role: ping_updates,       label: Updates,       description: New update released}
@@ -35,7 +35,7 @@ ping_roles:
   - {role: ping_polls,         label: Polls,         description: Vote on what comes next}
   - {role: ping_socials,       label: Socials,       description: New posts on our socials}
 
-# Platform menu in #roles (pick one)
+# Platform menu (pick one)
 platform_roles:
   - {role: plat_pc,      label: PC}
   - {role: plat_mobile,  label: Mobile}
@@ -56,9 +56,9 @@ support:
     - keywords: [gamepass, game pass, bought, purchase, robux, didn't get, did not get]
       answer: Purchases can take a minute to appear. Rejoin the game once. If it's still missing after that, open a ticket and include the item name.
     - keywords: [livery, template]
-      answer: All livery templates are in the pinned Templates post in #liveries, or use /template in any channel.
+      answer: All livery templates are in the pinned Templates post in liveries, or use /template in any channel.
     - keywords: [private server, rp server, airline]
-      answer: Player airlines and private servers are listed in #rp-servers. Owners can make one post there for their server.
+      answer: Player airlines and private servers are listed in airlines. Owners can make one post there for their server.
   queue_eta_fallback_min: 15
   snippets:   # /reply <name> inside a ticket
     hello: Hi! Thanks for reaching out, I'm looking into this now.
@@ -99,4 +99,4 @@ livery_contest:
   vote_emoji: "⭐"
 
 party:
-  name_format: "︱{name}'s party"
+  name_format: "{name}'s lounge"

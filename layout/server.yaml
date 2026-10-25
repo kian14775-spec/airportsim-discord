@@ -39,76 +39,71 @@ groups:
 
 categories:
   - key: start
-    name: DIRECTORY
-    was: [START HERE, CHECK-IN, BULLETIN]
+    name: START
     perms: readonly
     channels:
       - key: welcome
-        name: ︱welcome
+        name: rules-and-verify
         was: [information, verify]
         perms: welcome
-        topic: Rules, info and verify. Start here.
-      - key: roles
-        name: ︱roles
-        was: [reaction-roles]
-        topic: Pick your ping roles.
-      - {key: support, name: ︱support, was: [support-center], topic: "Need help? Use the buttons below."}
+        topic: Rules, verify and your roles. Start here.
+      - {key: announcements, name: news, was: [announcements], type: announcement, topic: "News, updates, sneak peeks and polls."}
 
-  - key: game
-    name: AIRPORT SIMULATOR
+  - key: support
+    name: HELP
     perms: readonly
     channels:
-      - {key: announcements, name: ︱announcements, type: announcement, topic: "News, polls and socials."}
-      - {key: updates,       name: ︱updates,       type: announcement, topic: "Release notes for every update."}
-      - {key: devlogs,       name: ︱dev-logs,      type: announcement, topic: "Behind the scenes and sneak peeks."}
+      - {key: support, name: support, was: [support-center], topic: "Need help? Use the menu below."}
+      - key: feedback
+        name: ideas-and-bugs
+        was: [feedback, suggestions]
+        type: forum
+        perms: forum
+        require_tag: true
+        topic: Ideas, bugs and UI suggestions. Vote on the ones you like.
+        tags: [Suggestion, Bug, UI, New*, Under review*, Planned*, Done*]   # * = only staff can set
 
   - key: community
-    name: COMMUNITY
+    name: TALK
     perms: members
     channels:
-      - {key: chat,  name: ︱chat,  slowmode: 3}
-      - {key: media, name: ︱media, topic: "Screenshots and clips from the game."}
-      - {key: create_party, name: "︱Create Party", type: voice, perms: voice}
+      - {key: chat,  name: general, was: [chat], slowmode: 3}
+      - {key: media, name: screenshots, was: [media], topic: "Screenshots and clips from the game."}
+      - {key: create_party, name: lounge, was: [Create Party], type: voice, perms: voice}
 
   - key: hangar
-    name: PLAYER HUB
+    name: CREATE
     perms: forum
     channels:
       - key: liveries
-        name: ︱liveries
+        name: liveries
         type: forum
         layout: gallery
         require_tag: true
         topic: Templates are in the pinned post. Share your liveries here.
         tags: [Template, Showcase, WIP]
       - key: rp_servers
-        name: ︱rp-servers
+        name: airlines
+        was: [rp-servers]
         type: forum
         require_tag: true
         topic: One post per airline or private server. Name, fleet, how to join.
         tags: [Airline, Airport, Cargo, Hiring]
-      - key: feedback
-        name: ︱feedback
-        was: [suggestions]
-        type: forum
-        require_tag: true
-        topic: Suggestions, bugs and UI ideas. Vote on the ones you like.
-        tags: [Suggestion, Bug, UI, New*, Under review*, Planned*, Done*]   # * = only staff can set
 
   - key: staff
     name: STAFF
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: ︱staff-chat, was: [moderator-only]}
-      - {key: logs,         name: ︱logs, was: [mod-logs]}
+      - {key: staff_chat,   name: staff-chat, was: [moderator-only]}
+      - {key: logs,         name: logs, was: [mod-logs]}
       - key: inbox
-        name: ︱inbox
+        name: inbox
         type: forum
         topic: Every support ticket is a post here.
         tags: [Open, Claimed, Waiting, Urgent, Dev team, Appeal]
       - key: applications
-        name: ︱applications
+        name: applications
         type: forum
         topic: Every staff application is a post here. Vote, discuss, then accept or deny.
         tags: [Pending, Accepted, Denied]

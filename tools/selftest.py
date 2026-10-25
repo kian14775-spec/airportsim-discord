@@ -57,8 +57,8 @@ async def run(client: discord.Client):
     traveler = g.get_role(state["role:verified"])
     unverified = discord.utils.get(g.roles, name="Unverified")
     mod = g.get_role(state["role:moderator"])
-    public = ["welcome", "roles", "announcements", "updates", "devlogs", "chat", "media", "liveries",
-              "rp_servers", "support", "feedback", "create_party"]
+    public = ["welcome", "announcements", "chat", "media", "liveries", "rp_servers", "support", "feedback",
+              "create_party"]
     staff = ["staff_chat", "logs", "inbox", "applications"]
 
     for key in public + staff:
@@ -76,7 +76,7 @@ async def run(client: discord.Client):
             check(ver.view_channel, f"verified can see #{c.name}")
         else:
             check(not ver.view_channel and stf.view_channel, f"#{c.name} is staff-only")
-    for key in ("announcements", "updates", "devlogs", "roles", "support"):
+    for key in ("announcements", "support"):
         check(not perms_for(ch(key), [traveler]).send_messages, f"members can't post in #{ch(key).name}")
     check(perms_for(ch("chat"), [traveler]).send_messages, "members can chat in #chat")
     check(perms_for(ch("feedback"), [traveler]).send_messages, "members can make posts in #feedback")
@@ -88,7 +88,7 @@ async def run(client: discord.Client):
     if unverified:
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
-    for key, embeds_wanted in (("welcome", 1), ("roles", 1), ("support", 2)):
+    for key, embeds_wanted in (("welcome", 1), ("support", 2)):
         found = None
         async for m in ch(key).history(limit=25):
             if m.author.id == g.me.id and m.components:

@@ -45,9 +45,13 @@ def role_id(guild_id: int, key: str) -> int | None:
 def make_plan(guild: discord.Guild, archive_extras: bool = False) -> tuple[model.Layout, Plan]:
     layout = model.load(LAYOUT_FILE)
     from .. import db   # party voice channels are the bot's own, not leftovers
+    state, snap = load_state(guild.id), snapshot(guild)
     parties = {r["channel_id"] for r in db.q("SELECT channel_id FROM parties")}
-    return layout, plan(layout, snapshot(guild), load_state(guild.id), archive_extras=archive_extras,
-                        ignore=parties)
+    hub = snap.channels.get(state.get("ch:create_party"))
+    if hub:   # also any other voice channel next to the hub (made by the bot running elsewhere)
+        parties |= {c.id for c in snap.channels.values()
+                    if c.type == "voice" and c.parent == hub.parent and c.id != hub.id}
+    return layout, plan(layout, snap, state, archive_extras=archive_extras, ignore=parties)
 
 
 def describe(p: Plan) -> str:

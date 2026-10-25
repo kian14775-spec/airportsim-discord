@@ -138,7 +138,7 @@ class Community(commands.Cog):
         author_id = db.kv_get(f"feedback_author:{thread.id}") or thread.owner_id
         if author_id and author_id != self.bot.user.id:
             users.setdefault(author_id, self.bot.get_user(author_id) or await self.bot.fetch_user(author_id))
-        upd = channel(thread.guild, "updates")
+        upd = channel(thread.guild, "announcements")
         latest = None
         if upd:
             async for m in upd.history(limit=1):
