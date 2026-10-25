@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS parties (channel_id INTEGER PRIMARY KEY, owner_id INT
 CREATE TABLE IF NOT EXISTS shipped (thread_id INTEGER PRIMARY KEY, notified REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS rp_posts (owner_id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL, created REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS rp_stale (thread_id INTEGER PRIMARY KEY, warned REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS relay_map (src INTEGER PRIMARY KEY, dst_channel INTEGER NOT NULL, dst INTEGER NOT NULL,
+    ticket_id INTEGER NOT NULL, side TEXT NOT NULL);
 """
 
 # Columns added after the first release (ALTER is skipped when they already exist)

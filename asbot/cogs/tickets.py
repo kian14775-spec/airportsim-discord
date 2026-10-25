@@ -158,6 +158,12 @@ async def profile_embed(guild: discord.Guild, user: discord.abc.User, roblox_hin
     return e
 
 
+def link_copy(src: discord.Message, copy: discord.Message, tid: int, side: str) -> None:
+    """Remember that `copy` is the relayed version of `src` (side = who wrote the original)."""
+    db.run("INSERT OR REPLACE INTO relay_map(src, dst_channel, dst, ticket_id, side) VALUES(?, ?, ?, ?, ?)",
+           src.id, copy.channel.id, copy.id, tid, side)
+
+
 # ---------- persistent controls (survive restarts) ----------
 class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t:(?P<action>[a-z]+):(?P<id>\d+)"):
     LABELS = {"claim": ("Claim", discord.ButtonStyle.primary), "dev": ("Send to dev team", discord.ButtonStyle.secondary),
@@ -593,13 +599,12 @@ class Tickets(commands.Cog):
         except discord.HTTPException as e:
             log.warning("control card: %s", e)
 
-    async def send_to_user(self, t, e: discord.Embed, files=None, view=None) -> bool:
+    async def send_to_user(self, t, e: discord.Embed, files=None, view=None) -> discord.Message | None:
         try:
             user = self.bot.get_user(t["user_id"]) or await self.bot.fetch_user(t["user_id"])
-            await user.send(embed=e, files=files or [], view=view)
-            return True
+            return await user.send(embed=e, files=files or [], view=view)
         except discord.HTTPException:
-            return False
+            return None
 
     # ---------- closing ----------
     async def ask_close(self, t, by: discord.Member):
@@ -696,7 +701,8 @@ class Tickets(commands.Cog):
             await thread.edit(archived=False)
         e = embed(description=msg.content[:4000] or "*(attachment)*", colour=discord.Colour(AMBER))
         e.set_author(name=f"{msg.author.display_name} (member)", icon_url=msg.author.display_avatar.url)
-        await thread.send(embed=e, files=await self._files(msg))
+        copy = await thread.send(embed=e, files=await self._files(msg))
+        link_copy(msg, copy, t["id"], "member")
         await msg.add_reaction("✅")
         db.run("UPDATE tickets SET status='open', last_activity=?, warned=0 WHERE id=?", db.now(), t["id"])
         if t["status"] != "open":
@@ -708,21 +714,67 @@ class Tickets(commands.Cog):
             return
         if t["status"] == "closed":
             return await msg.reply("This ticket is closed. The member won't see this.", mention_author=False)
-        ok = await self.relay_staff(t, msg.author, msg.content, await self._files(msg))
+        ok = await self.relay_staff(t, msg.author, msg.content, await self._files(msg), src=msg)
         await msg.add_reaction("✅" if ok else "❌")
         if not ok:
             await msg.reply("Couldn't DM the member (DMs closed or they left).", mention_author=False)
 
-    async def relay_staff(self, t, author: discord.Member, content: str, files) -> bool:
+    async def relay_staff(self, t, author: discord.Member, content: str, files, src=None) -> bool:
         e = embed(description=content[:4000] or "*(attachment)*", colour=discord.Colour(GREEN))
         e.set_author(name=f"{author.display_name} · Support team", icon_url=author.display_avatar.url)
-        if not await self.send_to_user(t, e, files):
+        sent = await self.send_to_user(t, e, files)
+        if not sent:
             return False
+        if src is not None:
+            link_copy(src, sent, t["id"], "staff")
         now = db.now()
         db.run("UPDATE tickets SET status='waiting', last_activity=?, first_reply=COALESCE(first_reply, ?), "
                "claimed_by=COALESCE(claimed_by, ?) WHERE id=?", now, now, author.id, t["id"])
         await self.refresh(t["id"])
         return True
+
+    # ---------- deletes and edits follow the message to the other side ----------
+    async def _copy_of(self, payload_message_id: int):
+        row = db.one("SELECT * FROM relay_map WHERE src=?", payload_message_id)
+        if not row:
+            return None, None
+        try:
+            ch = self.bot.get_channel(row["dst_channel"]) or await self.bot.fetch_channel(row["dst_channel"])
+            return row, await ch.fetch_message(row["dst"])
+        except discord.HTTPException:
+            return row, None
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        row, copy = await self._copy_of(payload.message_id)
+        if not row or not copy:
+            return
+        try:
+            if row["side"] == "staff":            # staff deleted in the inbox -> remove it from the member's DMs
+                await copy.delete()
+            else:                                  # member deleted their DM -> staff keep it, marked
+                e = copy.embeds[0]
+                e.set_footer(text="🗑️ The member deleted this message")
+                await copy.edit(embed=e)
+        except discord.HTTPException as e:
+            log.warning("relay delete: %s", e)
+        db.run("DELETE FROM relay_map WHERE src=?", payload.message_id)
+
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
+        content = payload.data.get("content")
+        if content is None or payload.data.get("author", {}).get("bot"):
+            return
+        row, copy = await self._copy_of(payload.message_id)
+        if not row or not copy or not copy.embeds:
+            return
+        e = copy.embeds[0]
+        e.description = content[:4000] or "*(attachment)*"
+        e.set_footer(text="✏️ edited")
+        try:
+            await copy.edit(embed=e)
+        except discord.HTTPException as err:
+            log.warning("relay edit: %s", err)
 
     # ---------- timers ----------
     @tasks.loop(minutes=5)
