@@ -38,16 +38,22 @@ groups:
   staff: [founder, owner, co_owner, board, developer, moderator, trial_mod, support_team]
 
 categories:
-  - key: start
-    name: START
-    perms: readonly
+  - key: top
+    top: true           # no section header: sits above everything
     channels:
       - key: welcome
         name: rules-and-verify
         was: [information, verify]
         perms: welcome
         topic: Rules, verify and your roles. Start here.
-      - {key: announcements, name: news, was: [announcements], type: announcement, topic: "News, updates, sneak peeks and polls."}
+
+  - key: news
+    name: STAY TUNED
+    perms: readonly
+    channels:
+      - {key: announcements, name: announcements, was: [news], type: announcement, topic: "Big news about Airport Simulator."}
+      - {key: devlogs, name: dev-logs, type: announcement, topic: "Changelogs, polls and sneak peeks."}
+      - {key: socials, name: socials, type: announcement, topic: "Our latest posts on social media."}
 
   - key: support
     name: HELP
@@ -68,7 +74,7 @@ categories:
     perms: members
     channels:
       - {key: chat,  name: general, was: [chat], slowmode: 3}
-      - {key: media, name: screenshots, was: [media], topic: "Screenshots and clips from the game."}
+      - {key: media, name: media, was: [screenshots], topic: "Screenshots and clips from the game."}
       - {key: create_party, name: lounge, was: [Create Party], type: voice, perms: voice}
 
   - key: hangar

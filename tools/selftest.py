@@ -57,7 +57,7 @@ async def run(client: discord.Client):
     traveler = g.get_role(state["role:verified"])
     unverified = discord.utils.get(g.roles, name="Unverified")
     mod = g.get_role(state["role:moderator"])
-    public = ["welcome", "announcements", "chat", "media", "liveries", "rp_servers", "support", "feedback",
+    public = ["welcome", "announcements", "devlogs", "socials", "chat", "media", "liveries", "rp_servers", "support", "feedback",
               "create_party"]
     staff = ["staff_chat", "logs", "inbox", "applications"]
 
@@ -76,7 +76,7 @@ async def run(client: discord.Client):
             check(ver.view_channel, f"verified can see #{c.name}")
         else:
             check(not ver.view_channel and stf.view_channel, f"#{c.name} is staff-only")
-    for key in ("announcements", "support"):
+    for key in ("announcements", "devlogs", "socials", "support"):
         check(not perms_for(ch(key), [traveler]).send_messages, f"members can't post in #{ch(key).name}")
     check(perms_for(ch("chat"), [traveler]).send_messages, "members can chat in #chat")
     check(perms_for(ch("feedback"), [traveler]).send_messages, "members can make posts in #feedback")

@@ -52,6 +52,7 @@ class CategorySpec:
     overwrites: Overwrites
     channels: list[ChannelSpec]
     was: list[str] = field(default_factory=list)
+    top: bool = False      # channels above every section, no header
 
 
 @dataclass
@@ -159,7 +160,8 @@ def parse(data: dict) -> Layout:
         keys[kind].add(key)
 
     for c in data.get("categories") or []:
-        ckey = c.get("key") or norm(c["name"])
+        top = bool(c.get("top"))
+        ckey = c.get("key") or ("_top" if top else norm(c["name"]))
         claim(ckey, "category")
         cat_ow = _preset(presets, c.get("perms"), f"category {ckey}")
         chans = []
@@ -187,7 +189,8 @@ def parse(data: dict) -> Layout:
                 layout=layout,
                 was=_was(ch),
             ))
-        cats.append(CategorySpec(key=ckey, name=c["name"], overwrites=cat_ow, channels=chans, was=_was(c)))
+        cats.append(CategorySpec(key=ckey, name=c.get("name") or "(top)", overwrites=cat_ow, channels=chans,
+                                 was=_was(c), top=top))
     return Layout(roles=roles, categories=cats, presets=presets, groups=groups)
 
 

@@ -12,6 +12,7 @@ from .model import EVERYONE, CategorySpec, ChannelSpec, Layout, Overwrites, Role
 ARCHIVE_KEY = "_archive"
 ARCHIVE_NAME = "ARCHIVE"
 TEXTLIKE = {"text", "announcement"}
+TOP = "_top"   # "parent" value for channels that sit above every section
 
 
 # ---- snapshot of the live server (built from discord.py or by the fake backend) ----
@@ -162,6 +163,8 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
     chans = {i: c for i, c in snap.channels.items() if c.type != "category"}
     desired_cat_ids: list[str] = []
     for cspec in layout.categories:
+        if cspec.top:
+            continue
         desired_cat_ids.append(cat_ref(cspec.key))
         have = m.take(cat_ref(cspec.key), cats, [cspec.name, *cspec.was])
         if have is None:
@@ -180,12 +183,13 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
                                       f"~ category {cspec.name}: " + ", ".join(p for p in parts if p), diff))
 
     for cspec in layout.categories:
-        parent_id = matches.get(cat_ref(cspec.key))
+        parent_id = None if cspec.top else matches.get(cat_ref(cspec.key))
         for spec in cspec.channels:
             if spec.type in ("announcement", "forum"):
                 needs_community.append(spec.name)
             # prefer a same-named channel that already sits in this category
-            same_parent = {i: c for i, c in chans.items() if parent_id is not None and c.parent == parent_id}
+            same_parent = {i: c for i, c in chans.items()
+                           if (c.parent is None if cspec.top else parent_id is not None and c.parent == parent_id)}
             ok = lambda c, t=spec.type: _compatible(t, c.type)
             have = (m.take(ch_ref(spec.key), chans, [], ok)
                     or m.take("", same_parent, [spec.name, *spec.was], ok)
@@ -193,7 +197,7 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
             if have is None:
                 actions.append(Action("create_channel", spec.key,
                                       f"+ {spec.type} #{spec.name} in {cspec.name}",
-                                      {"spec": spec, "parent": cspec.key}))
+                                      {"spec": spec, "parent": None if cspec.top else cspec.key}))
                 continue
             matches[ch_ref(spec.key)] = have.id
             diff, notes = _channel_diff(spec, have, parent_id, cspec, have_overwrites(have))
@@ -248,7 +252,11 @@ def _channel_diff(spec: ChannelSpec, have: ChannelSnap, parent_id, cspec: Catego
     if have.name != spec.name:
         diff["name"] = spec.name
         notes.append(f"rename '{have.name}'")
-    if have.parent != parent_id or parent_id is None:
+    if cspec.top:
+        if have.parent is not None:
+            diff["parent"] = TOP
+            notes.append("move to the top")
+    elif have.parent != parent_id or parent_id is None:
         diff["parent"] = cspec.key
         notes.append(f"move to {cspec.name}")
     if spec.type in TEXTLIKE and have.type != spec.type:
@@ -281,13 +289,13 @@ def _order_differs(layout: Layout, snap: Snapshot, matches: dict[str, int]) -> b
     def ordered(ids):
         return sorted(ids, key=lambda i: (snap.channels[i].position, i))
 
-    want_cats = [matches[cat_ref(c.key)] for c in layout.categories]
+    want_cats = [matches[cat_ref(c.key)] for c in layout.categories if not c.top]
     have_cats = [i for i in ordered([c.id for c in snap.channels.values() if c.type == "category"])
                  if i in set(want_cats)]
     if want_cats != have_cats:
         return True
     for c in layout.categories:
-        pid = matches[cat_ref(c.key)]
+        pid = None if c.top else matches[cat_ref(c.key)]
         for grp in ("text", "voice"):
             want = [matches[ch_ref(s.key)] for s in c.channels if _group(s.type) == grp]
             have = [i for i in ordered([x.id for x in snap.channels.values()
@@ -301,9 +309,14 @@ def _order_differs(layout: Layout, snap: Snapshot, matches: dict[str, int]) -> b
 def desired_order(layout: Layout, ids: dict[str, int]) -> list[tuple[int, int, int | None]]:
     """(id, position, parent_id) for every managed category and channel."""
     out: list[tuple[int, int, int | None]] = []
-    for ci, c in enumerate(layout.categories):
+    ci = 0
+    for c in layout.categories:
+        if c.top:
+            out += [(ids[ch_ref(s.key)], n, None) for n, s in enumerate(c.channels)]
+            continue
         cid = ids[cat_ref(c.key)]
         out.append((cid, ci, None))
+        ci += 1
         pos = {"text": 0, "voice": 0}
         for s in c.channels:
             g = _group(s.type)

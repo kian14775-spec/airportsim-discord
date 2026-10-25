@@ -116,7 +116,7 @@ class DiscordBackend:
             elif k == "overwrites":
                 kw["overwrites"] = self._overwrites(v)
             elif k == "parent":
-                kw["category"] = self.guild.get_channel(v)
+                kw["category"] = self.guild.get_channel(v) if v else None
             elif k == "topic":
                 kw["topic"] = v or ""
             elif k == "slowmode":

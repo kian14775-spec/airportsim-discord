@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from .model import EVERYONE, Layout, Overwrites
-from .planner import (ARCHIVE_KEY, ARCHIVE_NAME, Plan, cat_ref, ch_ref, desired_order, role_ref)
+from .planner import (ARCHIVE_KEY, ARCHIVE_NAME, TOP, Plan, cat_ref, ch_ref, desired_order, role_ref)
 
 
 class Backend(Protocol):
@@ -52,14 +52,15 @@ async def execute(plan: Plan, layout: Layout, backend: Backend, state: dict[str,
             await backend.edit_channel(ids[cat_ref(a.key)], "category", fields)
         elif a.op == "create_channel":
             s = a.data["spec"]
-            ids[ch_ref(s.key)] = await backend.create_channel(s, ids[cat_ref(a.data["parent"])],
+            parent = a.data["parent"]
+            ids[ch_ref(s.key)] = await backend.create_channel(s, ids[cat_ref(parent)] if parent else None,
                                                               resolve(s.overwrites))
         elif a.op == "edit_channel":
             fields = {k: v for k, v in a.data.items() if k != "_type"}
             if "overwrites" in fields:
                 fields["overwrites"] = resolve(fields["overwrites"])
             if "parent" in fields:
-                fields["parent"] = ids[cat_ref(fields["parent"])]
+                fields["parent"] = None if fields["parent"] == TOP else ids[cat_ref(fields["parent"])]
             await backend.edit_channel(ids[ch_ref(a.key)], a.data["_type"], fields)
         elif a.op == "archive":
             hidden = resolve({EVERYONE: (0, _view_bit()), **_staff_view(layout)})

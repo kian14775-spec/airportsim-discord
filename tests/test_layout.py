@@ -76,7 +76,7 @@ def empty():
 
 def test_layout_parses():
     lay = model.load(LAYOUT)
-    assert lay.categories[0].key == "start"
+    assert lay.categories[0].top and lay.categories[0].channels[0].key == "welcome"
     assert sum(len(c.channels) for c in lay.categories) >= 10
 
 

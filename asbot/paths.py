@@ -22,8 +22,11 @@ def merge_seed_state() -> None:
             continue
         live, seed = json.loads(dst.read_text()), json.loads(src.read_text())
         added = {k: v for k, v in seed.items() if k not in live}
-        if added:
-            dst.write_text(json.dumps({**live, **added}, indent=2, sort_keys=True))
+        force = SEED / "state" / src.name.replace("ids_", "force_")   # ids that must change (rare)
+        forced = json.loads(force.read_text()) if force.exists() else {}
+        merged = {**live, **added, **forced}
+        if merged != live:
+            dst.write_text(json.dumps(merged, indent=2, sort_keys=True))
 
 
 def seed_once() -> None:

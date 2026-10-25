@@ -11,7 +11,7 @@ from ..panels import ensure_panel
 
 STATES = {"ok": ("All systems normal", 0x2ECC71), "issues": ("Some issues right now", 0xF1C40F),
           "down": ("Game is down", 0xE74C3C), "maintenance": ("Maintenance", 0x3498DB)}
-TARGETS = {"news": "announcements"}
+TARGETS = {"announcements": "announcements", "dev-logs": "devlogs", "socials": "socials"}
 PINGS = {"none": None, "announcements": "ping_announcements", "updates": "ping_updates",
          "dev logs": "ping_devlogs", "polls": "ping_polls", "socials": "ping_socials"}
 
