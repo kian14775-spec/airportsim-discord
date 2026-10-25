@@ -24,7 +24,7 @@ from .. import db, opencloud
 from ..core import (cfg, channel, embed, is_staff, log, log_staff, role_named, roblox_group_rank,
                     roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
-from .. import transcripts
+from .. import faq, transcripts
 
 NOTE_PREFIX = "//"
 from ..ui import BAD as RED, BRAND as BLUE, GOOD as GREEN, QUIET as GREY, WAIT as AMBER
@@ -67,12 +67,37 @@ def eta_minutes() -> int:
     return max(1, round(sum(r["d"] for r in rows) / len(rows) / 60))
 
 
-def faq_answer(text: str) -> str | None:
-    low = text.lower()
-    for a in cfg()["support"]["answers"]:
-        if any(k in low for k in a["keywords"]):
-            return a["answer"]
-    return None
+class SaveAnswerModal(discord.ui.Modal, title="Save as instant answer"):
+    keywords = discord.ui.TextInput(label="Keywords (comma separated)", max_length=200,
+                                    placeholder="spawn, plane, stuck")
+    answer = discord.ui.TextInput(label="Answer the member gets", style=discord.TextStyle.paragraph, max_length=1500)
+
+    def __init__(self, text: str, words: str):
+        super().__init__()
+        self.answer.default = text[:1500]
+        self.keywords.default = words
+
+    async def on_submit(self, interaction: discord.Interaction):
+        fid = faq.add(self.keywords.value, self.answer.value, interaction.user.id)
+        await interaction.response.send_message(
+            f"Saved as instant answer #{fid}. Members whose problem mentions "
+            f"**{self.keywords.value}** now get it before a ticket opens.", ephemeral=True)
+        await log_staff(interaction.guild, f"Instant answer #{fid} added by {interaction.user.mention}: "
+                                           f"{self.keywords.value}", kind="Tickets")
+
+
+STOPWORDS = {"the", "and", "you", "your", "for", "this", "that", "with", "have", "please", "just", "then", "can",
+             "will", "again", "game", "there", "they", "what", "when", "it's", "from", "into", "also"}
+
+
+def guess_keywords(src: str) -> str:
+    """Suggest a few keywords from the member's problem text."""
+    words = [w.strip(".,!?()") for w in src.lower().split()]
+    seen = []
+    for w in words:
+        if len(w) > 3 and w not in STOPWORDS and w not in seen:
+            seen.append(w)
+    return ", ".join(seen[:4])
 
 
 def state_of(t) -> tuple[str, str, int]:
@@ -366,24 +391,26 @@ class IssueModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         text = self.details.value
         extra = self.extra.value if self.extra else ""
-        answer = faq_answer(text + " " + extra)
-        if answer:
-            view = TriageView(self.topic, text, extra, self.username.value)
-            return await interaction.response.send_message(embed=embed("Try this first", answer), view=view,
-                                                           ephemeral=True)
+        entry = faq.match(text + " " + extra)
+        if entry:
+            view = TriageView(self.topic, text, extra, self.username.value, entry)
+            return await interaction.response.send_message(embed=embed("Try this first", entry["answer"], tone="brand"),
+                                                           view=view, ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
         await interaction.client.get_cog("Tickets").open(interaction, self.topic["key"], text, extra,
                                                           self.username.value)
 
 
 class TriageView(discord.ui.View):
-    def __init__(self, topic, text, extra, username):
+    def __init__(self, topic, text, extra, username, entry=None):
         super().__init__(timeout=900)
         self.args = (topic["key"], text, extra, username)
+        self.entry = entry
 
     @discord.ui.button(label="That fixed it", style=discord.ButtonStyle.success)
     async def fixed(self, interaction: discord.Interaction, _):
         db.kv_set("triage_solved", db.kv_get("triage_solved", 0) + 1)
+        faq.counted(self.entry)
         await interaction.response.edit_message(content="Glad that helped!", embed=None, view=None)
 
     @discord.ui.button(label="I still need help", style=discord.ButtonStyle.secondary)
@@ -443,12 +470,34 @@ class Tickets(commands.Cog):
         bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, transcripts.ViewButton,
                               transcripts.HistoryButton)
         self._dm_nag: dict[int, float] = {}
+        self.save_menu = app_commands.ContextMenu(name="Save as instant answer", callback=self.save_answer)
+        self.save_menu.default_permissions = discord.Permissions(moderate_members=True)
+        bot.tree.add_command(self.save_menu)
         self.monthly.start()
         self.timers.start()
 
     def cog_unload(self):
         self.monthly.cancel()
         self.timers.cancel()
+        self.bot.tree.remove_command(self.save_menu.name, type=self.save_menu.type)
+
+    async def save_answer(self, interaction: discord.Interaction, message: discord.Message):
+        if not is_staff(interaction.user):
+            return await interaction.response.send_message("Staff only.", ephemeral=True)
+        text = message.content or (message.embeds[0].description if message.embeds else "") or ""
+        if text.startswith(NOTE_PREFIX):
+            text = text[len(NOTE_PREFIX):].strip()
+        if not text:
+            return await interaction.response.send_message("That message has no text to save.", ephemeral=True)
+        problem = ""
+        if isinstance(interaction.channel, discord.Thread):   # keywords come from the member's problem
+            try:
+                starter = await interaction.channel.fetch_message(interaction.channel.id)
+                problem = next((e.description or "" for e in starter.embeds
+                                if (e.title or "").startswith("The problem")), "")
+            except discord.HTTPException:
+                pass
+        await interaction.response.send_modal(SaveAnswerModal(text, guess_keywords(problem or text)))
 
     @property
     def guild(self) -> discord.Guild:

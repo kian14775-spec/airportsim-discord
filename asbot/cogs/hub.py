@@ -102,7 +102,9 @@ ACTIONS = [("announce", "Post an announcement", "announcements, dev-logs or soci
            ("status", "Game status", "All good, issues, down, maintenance"),
            ("issues", "Known issues and next update", "What shows on the support card"),
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
-           ("member", "Look up a member", "Roblox link, tickets, roles"),
+           ("member", "Look up a member", "Roblox link, tickets, strikes"),
+           ("warn", "Warn a member", "Give a strike; timeouts happen by themselves"),
+           ("answers", "Instant answers", "See and remove saved answers"),
            ("today", "Today's numbers", "Joins, visits, group, tickets so far today"),
            ("stats", "Support numbers", "This month's tickets and ratings"),
            ("health", "Bot health", "Latency and uptime")]
@@ -129,6 +131,18 @@ class StaffMenu(discord.ui.Select):
             return await interaction.response.send_message("Who?", view=_private([MemberPick()]), ephemeral=True)
         if act == "today":
             return await interaction.response.send_message(embed=await bot.get_cog("Stats").so_far(), ephemeral=True)
+        if act == "warn":
+            return await interaction.response.send_message("Who?", view=_private([WarnPick()]), ephemeral=True)
+        if act == "answers":
+            rows = db.q("SELECT * FROM faq ORDER BY hits DESC, id DESC")
+            if not rows:
+                return await interaction.response.send_message(
+                    "No saved answers yet. Right-click a staff reply in a ticket → Apps → Save as instant answer.",
+                    ephemeral=True)
+            lines = [f"`#{r['id']}` **{r['keywords']}** · used {r['hits']}x\n{r['answer'][:90]}" for r in rows[:15]]
+            return await interaction.response.send_message(
+                embed=ui.card("Instant answers", "\n\n".join(lines)), view=_private([AnswerRemove(rows)]),
+                ephemeral=True)
         if act == "stats":
             e = bot.get_cog("Tickets").stats_embed(dt.datetime.now(dt.timezone.utc))
             return await interaction.response.send_message(embed=e, ephemeral=True)
@@ -197,6 +211,29 @@ class ContestView(discord.ui.View):
         await interaction.client.get_cog("Forums").contest_board()
 
 
+class WarnPick(discord.ui.UserSelect):
+    def __init__(self):
+        super().__init__(placeholder="Pick a member")
+
+    async def callback(self, interaction: discord.Interaction):
+        from .strikes import StrikeModal
+        member = interaction.guild.get_member(self.values[0].id)
+        if not member:
+            return await interaction.response.send_message("They're not in the server.", ephemeral=True)
+        await interaction.response.send_modal(StrikeModal(member))
+
+
+class AnswerRemove(discord.ui.Select):
+    def __init__(self, rows):
+        super().__init__(placeholder="Remove an answer", options=[
+            discord.SelectOption(label=f"#{r['id']} · {r['keywords'][:80]}", value=str(r["id"])) for r in rows[:25]])
+
+    async def callback(self, interaction: discord.Interaction):
+        from .. import faq
+        faq.remove(int(self.values[0]))
+        await interaction.response.send_message(f"Answer #{self.values[0]} removed.", ephemeral=True)
+
+
 class MemberPick(discord.ui.UserSelect):
     def __init__(self):
         super().__init__(placeholder="Pick a member")
@@ -209,12 +246,15 @@ class MemberPick(discord.ui.UserSelect):
                   f"linked <t:{int(link['linked_at'])}:R>") if link else "Not linked"
         tl = ", ".join(f"{t['id']:04d}{' ★' + str(t['rating']) if t['rating'] else ''}" for t in tickets) or "None"
         joined = f"<t:{int(m.joined_at.timestamp())}:R>" if getattr(m, "joined_at", None) else "-"
+        from .strikes import RemoveStrike, active, strikes_line
         e = ui.card(m.display_name, ui.kv(("Discord", m.mention), ("Roblox", roblox), ("Joined", joined),
-                                          ("Tickets", tl)), thumb=m.display_avatar.url)
+                                          ("Tickets", tl), ("Strikes", strikes_line(m.id))), thumb=m.display_avatar.url)
         from ..transcripts import HistoryButton
         v = discord.ui.View(timeout=600)
         if tickets:
             v.add_item(HistoryButton(m.id))
+        if active(m.id):
+            v.add_item(RemoveStrike(active(m.id)))
         await interaction.response.send_message(embed=e, view=v, ephemeral=True)
 
 
