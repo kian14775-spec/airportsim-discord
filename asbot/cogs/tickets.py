@@ -6,16 +6,15 @@ Staff messages starting with // stay internal (notes).
 
 #inbox only ever holds OPEN tickets. Each post starts with a control card that is
 edited in place (status, priority, claimed by, waiting time) and a title like
-"🟢 0012 · Purchase · kian". On close the whole conversation is saved as an HTML
-transcript in #transcripts (summary card + file + attachments) and the post is removed.
+"🟢 0012 · Purchase · kian". On close the chat and screenshots are stored by the bot
+(asbot/transcripts.py) and the post is removed; staff read it in a private viewer.
 Timers: staff get one nudge if nobody answered in 30 min; a ticket waiting on the
 member is warned after 24 h of silence and auto-closed after 48 h.
 """
 from __future__ import annotations
 
 import datetime as dt
-import html
-import io
+import json
 
 import discord
 from discord import app_commands
@@ -25,6 +24,7 @@ from .. import db, opencloud
 from ..core import (cfg, channel, embed, is_staff, log, log_staff, role_named, roblox_group_rank,
                     roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
+from .. import transcripts
 
 NOTE_PREFIX = "//"
 GREEN, RED, AMBER, GREY, BLUE = 0x2ECC71, 0xE74C3C, 0xF1C40F, 0x95A5A6, 0x3498DB
@@ -261,7 +261,8 @@ class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rat
             return await interaction.response.send_message("You already rated this one. Thanks!", ephemeral=True)
         db.run("UPDATE tickets SET rating=? WHERE id=?", self.score, self.tid)
         await interaction.response.edit_message(content=f"Thanks! You rated this {'★' * self.score}.", view=None)
-        await interaction.client.get_cog("Tickets").update_transcript_card(self.tid)
+        cog = interaction.client.get_cog("Tickets")
+        await log_staff(cog.guild, f"Ticket {self.tid:04d} rated {'★' * self.score} by the member", kind="Tickets")
 
 
 def staff_view(t) -> discord.ui.View:
@@ -270,8 +271,25 @@ def staff_view(t) -> discord.ui.View:
         v.add_item(TicketButton(a, t["id"]))
     if t["topic"] == "appeal":
         v.add_item(TicketButton("unban", t["id"]))
+    past = db.one("SELECT COUNT(*) n FROM tickets WHERE user_id=? AND status='closed'", t["user_id"])["n"]
+    if past:
+        v.add_item(transcripts.HistoryButton(t["user_id"], past))
     v.add_item(PrioritySelect(t["id"]))
     return v
+
+
+def summary_card(t) -> discord.Embed:
+    """Header of a closed ticket in the viewer."""
+    mins = round(((t["closed"] or db.now()) - t["created"]) / 60)
+    dur = f"{mins} min" if mins < 120 else f"{round(mins / 60, 1)} h"
+    e = embed(f"Ticket {t['id']:04d} · {topic_label(t['topic'])}", colour=discord.Colour(GREY))
+    e.add_field(name="Member", value=f"<@{t['user_id']}>")
+    e.add_field(name="Handled by", value=f"<@{t['claimed_by']}>" if t["claimed_by"] else "Nobody claimed")
+    e.add_field(name="Rating", value="★" * t["rating"] if t["rating"] else "Not rated")
+    e.add_field(name="Opened", value=f"<t:{int(t['created'])}:f>")
+    e.add_field(name="Open for", value=dur)
+    e.add_field(name="Priority", value=PRIORITIES.get(t["priority"], "Normal"))
+    return e
 
 
 def user_view(tid: int) -> discord.ui.View:
@@ -387,7 +405,8 @@ class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(SupportView())
-        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect)
+        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, transcripts.ViewButton,
+                              transcripts.HistoryButton)
         self._dm_nag: dict[int, float] = {}
         self.monthly.start()
         self.timers.start()
@@ -414,6 +433,12 @@ class Tickets(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.ensure_inbox_guide()
+        from ..paths import SEED   # tickets closed before the in-bot history existed
+        for f in sorted((SEED / "import").glob("ticket-*.json")):
+            try:
+                transcripts.import_rows(int(f.stem.split("-")[1]), json.loads(f.read_text(encoding="utf-8")))
+            except (ValueError, OSError) as e:
+                log.warning("import %s: %s", f.name, e)
         for t in db.q("SELECT id FROM tickets WHERE status!='closed'"):   # bring older tickets up to date
             try:
                 await self.refresh(t["id"])
@@ -431,7 +456,8 @@ class Tickets(commands.Cog):
                 "• Buttons on the top card: Claim, Send to dev team, Close, and a priority menu.\n"
                 "• `/reply` sends a saved reply. `/ticket_stats` shows this month's numbers.\n"
                 "• Nobody answers in 30 min: Support Team gets one ping. Member silent 48 h: auto-close.\n"
-                "• Closing saves the full chat to #transcripts and removes the post here.")
+                "• Closing stores the chat and removes the post. Read old tickets with the View transcript "
+                "button in the Tickets log, Past tickets on a new ticket, or /ticket view · history · search.")
         tid = db.kv_get("inbox_guide")
         th = await self.fetch_thread(tid)
         if th is None:
@@ -546,7 +572,7 @@ class Tickets(commands.Cog):
         except discord.HTTPException:
             return False
 
-    # ---------- closing + transcripts ----------
+    # ---------- closing ----------
     async def close(self, t, by: discord.abc.User | None, reason: str | None = None):
         if ticket(t["id"])["status"] == "closed":
             return
@@ -554,79 +580,48 @@ class Tickets(commands.Cog):
         t = ticket(t["id"])
         thread = await self.fetch_thread(t["thread_id"])
         who = reason or (f"closed by {by.display_name}" if by else "closed")
-        saved = False
+        saved = 0
         if thread:
-            saved = await self.save_transcript(t, thread, who)
-            if saved:
-                try:
-                    await thread.delete()
-                except discord.HTTPException as e:
-                    log.warning("ticket post delete: %s", e)
-                    saved = False
-            if not saved:   # keep the post if the transcript didn't save
-                await thread.send(f"Closed ({who}). Transcript couldn't be saved, so this post stays.")
+            try:
+                saved = await transcripts.archive(t["id"], thread, self.bot.user.id)
+                await thread.delete()
+            except Exception as e:  # noqa: BLE001 - keep the post if storing failed
+                log.warning("ticket %s archive: %s", t["id"], e)
+                await thread.send(f"Closed ({who}). Couldn't store the chat, so this post stays.")
                 await thread.edit(archived=True, locked=True)
+        transcripts.prune()
         await self.send_to_user(t, embed(f"Ticket {t['id']:04d} closed",
                                          "Thanks for reaching out. How did we do?", colour=discord.Colour(GREY)),
                                 view=rating_view(t["id"]))
-        await log_staff(self.guild, f"Ticket {t['id']:04d} {who}", kind="Tickets")
+        v = discord.ui.View(timeout=None)
+        v.add_item(transcripts.ViewButton(t["id"]))
+        await log_staff(self.guild, f"✅ Ticket {t['id']:04d} · {topic_label(t['topic'])} · <@{t['user_id']}> "
+                                    f"{who} · {saved} messages", kind="Tickets", view=v)
 
-    async def save_transcript(self, t, thread: discord.Thread, how: str) -> bool:
-        out = channel(self.guild, "transcripts")
-        if out is None:
-            return False
-        rows, files, budget = [], [], 20_000_000
-        count = 0
-        async for m in thread.history(limit=None, oldest_first=True):
-            count += 1
-            rows.append(_html_row(m))
-            for a in m.attachments:
-                if len(files) < 9 and a.size <= min(budget, 8_000_000):
-                    try:
-                        files.append(await a.to_file())
-                        budget -= a.size
-                    except discord.HTTPException:
-                        pass
-        user = self.bot.get_user(t["user_id"])
-        doc = _html_doc(f"Ticket {t['id']:04d} · {topic_label(t['topic'])}", user, t, rows)
-        files.insert(0, discord.File(io.BytesIO(doc.encode("utf-8")), f"ticket-{t['id']:04d}.html"))
-        try:
-            msg = await out.send(embed=self.transcript_card(t, count, how), files=files,
-                                 allowed_mentions=discord.AllowedMentions.none())
-        except discord.HTTPException as e:
-            log.warning("transcript post: %s", e)
-            return False
-        db.run("UPDATE tickets SET transcript_channel=?, transcript_message=? WHERE id=?", out.id, msg.id, t["id"])
-        return True
+    ticket_group = app_commands.Group(name="ticket", description="Read closed tickets (staff)")
 
-    def transcript_card(self, t, messages: int | None = None, how: str | None = None) -> discord.Embed:
-        mins = round(((t["closed"] or db.now()) - t["created"]) / 60)
-        dur = f"{mins} min" if mins < 120 else f"{round(mins / 60, 1)} h"
-        e = embed(f"Ticket {t['id']:04d} · {topic_label(t['topic'])}", colour=discord.Colour(GREY))
-        e.add_field(name="Member", value=f"<@{t['user_id']}>")
-        e.add_field(name="Handled by", value=f"<@{t['claimed_by']}>" if t["claimed_by"] else "Nobody claimed")
-        e.add_field(name="Rating", value="★" * t["rating"] if t["rating"] else "Not rated yet")
-        e.add_field(name="Opened", value=f"<t:{int(t['created'])}:f>")
-        e.add_field(name="Open for", value=dur)
-        e.add_field(name="Priority", value=PRIORITIES.get(t["priority"], "Normal"))
-        if messages is not None:
-            e.set_footer(text=f"{messages} messages · {how or 'closed'} · full chat in the file")
-        return e
+    @ticket_group.command(name="view", description="Open a closed ticket by number")
+    @staff_only()
+    async def ticket_view(self, interaction: discord.Interaction, number: int):
+        await transcripts.open_viewer(interaction, number)
 
-    async def update_transcript_card(self, tid: int):
-        t = ticket(tid)
-        if not t or not t["transcript_message"]:
-            return
-        try:
-            ch = self.guild.get_channel(t["transcript_channel"])
-            msg = await ch.fetch_message(t["transcript_message"])
-            old = msg.embeds[0].footer.text if msg.embeds else None
-            e = self.transcript_card(t)
-            if old:
-                e.set_footer(text=old)
-            await msg.edit(embed=e)
-        except (discord.HTTPException, AttributeError) as e:
-            log.warning("transcript card update: %s", e)
+    @ticket_group.command(name="history", description="Every closed ticket from one member")
+    @staff_only()
+    async def ticket_history(self, interaction: discord.Interaction, member: discord.User):
+        rows = db.q("SELECT * FROM tickets WHERE user_id=? AND status='closed' ORDER BY id DESC", member.id)
+        if not rows:
+            return await interaction.response.send_message("No closed tickets from them.", ephemeral=True)
+        await interaction.response.send_message(f"{len(rows)} ticket(s) from {member.mention}:",
+                                                view=transcripts.pick_list(rows), ephemeral=True)
+
+    @ticket_group.command(name="search", description="Find closed tickets by any word in the chat")
+    @staff_only()
+    async def ticket_search(self, interaction: discord.Interaction, text: str):
+        rows = transcripts.search(text)
+        if not rows:
+            return await interaction.response.send_message("Nothing found.", ephemeral=True)
+        await interaction.response.send_message(f"{len(rows)} ticket(s) mention \"{text}\":",
+                                                view=transcripts.pick_list(rows), ephemeral=True)
 
     # ---------- relay ----------
     @commands.Cog.listener()
@@ -780,39 +775,6 @@ class Tickets(commands.Cog):
     @monthly.before_loop
     async def _wait(self):
         await self.bot.wait_until_ready()
-
-
-# ---------- transcript HTML ----------
-def _html_row(m: discord.Message) -> str:
-    who, colour, body = m.author.display_name, "#949ba4", html.escape(m.content or "")
-    if m.embeds:
-        e = m.embeds[0]
-        if e.author and e.author.name:
-            who = e.author.name
-        colour = f"#{e.colour.value:06x}" if e.colour else colour
-        parts = [html.escape(e.title)] if e.title else []
-        if e.description:
-            parts.append(html.escape(e.description))
-        for f in e.fields:
-            parts.append(f"<b>{html.escape(f.name)}</b>: {html.escape(f.value)}")
-        body = "<br>".join(filter(None, [body] + parts))
-    note = m.content.startswith(NOTE_PREFIX)
-    files = "".join(f'<div class="f">📎 {html.escape(a.filename)}</div>' for a in m.attachments)
-    when = m.created_at.strftime("%Y-%m-%d %H:%M UTC")
-    return (f'<div class="m{" n" if note else ""}"><div class="h"><span style="color:{colour}">'
-            f'{html.escape(who)}</span> <span class="t">{when}{" · staff note" if note else ""}</span></div>'
-            f'<div class="b">{body.replace(chr(10), "<br>")}</div>{files}</div>')
-
-
-def _html_doc(title: str, user, t, rows: list[str]) -> str:
-    member = html.escape(user.name if user else str(t["user_id"]))
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html.escape(title)}</title>
-<style>body{{background:#313338;color:#dbdee1;font-family:system-ui,sans-serif;max-width:860px;margin:24px auto;padding:0 16px}}
-h1{{font-size:20px;margin:0 0 4px}}.s{{color:#949ba4;margin:0 0 20px}}.m{{padding:8px 0;border-bottom:1px solid #3f4147}}
-.n{{background:#3a3520;padding:8px}}.h{{font-weight:600}}.t{{color:#949ba4;font-weight:400;font-size:12px;margin-left:6px}}
-.b{{margin-top:4px;line-height:1.5}}.f{{color:#00a8fc;font-size:13px;margin-top:4px}}</style></head><body>
-<h1>{html.escape(title)}</h1><p class="s">Member: {member} · opened {dt.datetime.fromtimestamp(t['created'], dt.timezone.utc):%Y-%m-%d %H:%M} UTC ·
-attachments are in the same Discord message as this file</p>{''.join(rows)}</body></html>"""
 
 
 async def setup(bot):

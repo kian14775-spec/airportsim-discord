@@ -59,7 +59,7 @@ async def run(client: discord.Client):
     mod = g.get_role(state["role:moderator"])
     public = ["welcome", "roles", "announcements", "updates", "devlogs", "chat", "media", "liveries",
               "rp_servers", "support", "feedback", "create_party"]
-    staff = ["staff_chat", "logs", "inbox", "applications", "transcripts"]
+    staff = ["staff_chat", "logs", "inbox", "applications"]
 
     for key in public + staff:
         c = ch(key)
@@ -107,20 +107,18 @@ async def run(client: discord.Client):
     await th.edit(applied_tags=[tag("Waiting"), tag("Claimed"), tag("Urgent")])
     th = await client.fetch_channel(th.id)
     check({t.name for t in th.applied_tags} == {"Waiting", "Claimed", "Urgent"}, "ticket tags switch")
-    from asbot.cogs.tickets import _html_doc, _html_row
-    rows = [_html_row(m) async for m in th.history(oldest_first=True)]
-    doc = _html_doc("[self-test] transcript", None, {"user_id": 0, "created": db.now()}, rows)
-    import io
-    out = await ch("transcripts").send("[self-test] transcript, ignore",
-                                       file=discord.File(io.BytesIO(doc.encode()), "self-test.html"))
-    check(bool(out.attachments), "transcript saved to #transcripts")
+    await th.send("[self-test] member message")
+    await th.send("// [self-test] staff note")
+    from asbot import transcripts
+    n = await transcripts.archive(999999, th, g.me.id)
+    check(n >= 2 and len(transcripts.pages(999999)) >= 1, "closed ticket chat stored for the viewer")
+    db.run("DELETE FROM ticket_messages WHERE ticket_id=999999")
     await th.delete()
     try:
         await client.fetch_channel(th.id)
         check(False, "closed ticket removed from inbox")
     except discord.NotFound:
         check(True, "closed ticket removed from inbox")
-    await out.delete()
 
     hub = ch("create_party")
     vc = await g.create_voice_channel("[self-test] party", category=hub.category, overwrites=hub.overwrites)

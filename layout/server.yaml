@@ -112,7 +112,6 @@ categories:
         type: forum
         topic: Every staff application is a post here. Vote, discuss, then accept or deny.
         tags: [Pending, Accepted, Denied]
-      - {key: transcripts, name: ︱transcripts, topic: "Closed tickets: summary card + full transcript file."}
 
 # Permission presets. Role names: @everyone, or any role key/name above.
 presets:
