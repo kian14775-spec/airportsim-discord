@@ -54,7 +54,7 @@ def describe(p: Plan) -> str:
     if p.errors:
         lines = ["CAN'T APPLY YET:"] + ["! " + e for e in p.errors] + [""] + lines
     old = [c for c in p.extras if c.type != "category"]
-    if old:
+    if old and not any(a.op == "archive" for a in p.actions):
         lines += ["", f"Not in the layout ({len(old)}), left alone: " + ", ".join("#" + c.name for c in old),
                   "(apply --archive-extras moves them into a hidden ARCHIVE category)"]
     return "\n".join(lines)
