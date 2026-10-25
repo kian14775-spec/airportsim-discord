@@ -66,13 +66,36 @@ def staff_only():
     return discord.app_commands.check(pred)
 
 
-async def log_staff(guild: discord.Guild, text: str, **kw) -> None:
+LOG_KINDS = ("Verifications", "Tickets", "Applications", "Moderation", "Joins and leaves", "Bot")
+
+
+async def _log_thread(guild: discord.Guild, kind: str) -> discord.abc.Messageable | None:
+    """#logs is split into one thread per kind, made on first use."""
+    from . import db
     ch = channel(guild, "logs")
-    if ch:
+    if not isinstance(ch, discord.TextChannel):
+        return None
+    tid = db.kv_get(f"log_thread:{kind}")
+    th = guild.get_thread(tid) if tid else None
+    if th is None and tid:
         try:
-            await ch.send(text, allowed_mentions=discord.AllowedMentions.none(), **kw)
+            th = await guild.fetch_channel(tid)
         except discord.HTTPException:
-            log.warning("could not write to #logs")
+            th = None
+    if th is None:
+        th = await ch.create_thread(name=kind, type=discord.ChannelType.public_thread,
+                                    auto_archive_duration=10080)
+        db.kv_set(f"log_thread:{kind}", th.id)
+    return th
+
+
+async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) -> None:
+    try:
+        target = await _log_thread(guild, kind if kind in LOG_KINDS else "Bot")
+        if target:
+            await target.send(text, allowed_mentions=discord.AllowedMentions.none(), **kw)
+    except discord.HTTPException as e:
+        log.warning("could not write to #logs (%s): %s", kind, e)
 
 
 # ---- Roblox public web API (no key needed) ----

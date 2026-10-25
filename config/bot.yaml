@@ -35,6 +35,13 @@ ping_roles:
   - {role: ping_polls,         label: Polls,         description: Vote on what comes next}
   - {role: ping_socials,       label: Socials,       description: New posts on our socials}
 
+# Platform menu in #roles (pick one)
+platform_roles:
+  - {role: plat_pc,      label: PC}
+  - {role: plat_mobile,  label: Mobile}
+  - {role: plat_console, label: Console}
+  - {role: plat_vr,      label: VR}
+
 # Support: topics in the ticket menu. `answers` are tried before a ticket opens.
 support:
   topics:

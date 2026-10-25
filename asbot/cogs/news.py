@@ -55,7 +55,7 @@ class ConfirmPost(discord.ui.View):
             except discord.HTTPException:
                 pass
         await interaction.response.edit_message(content=f"Posted: {msg.jump_url}", embed=None, view=None)
-        await log_staff(interaction.guild, f"{interaction.user.mention} posted in {self.target.mention}")
+        await log_staff(interaction.guild, f"{interaction.user.mention} posted in {self.target.mention}", kind="Bot")
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, _):
@@ -125,6 +125,8 @@ class News(commands.Cog):
         await interaction.response.send_message("Status board updated.", ephemeral=True)
 
     async def render_status(self):
+        """One message in #support: live game status on top, the ticket menu below."""
+        from .tickets import SupportView, support_embed
         s = status()
         name, colour = STATES.get(s["state"], STATES["ok"])
         e = embed(f"Game status · {name}", colour=discord.Colour(colour))
@@ -133,9 +135,27 @@ class News(commands.Cog):
         e.add_field(name="Next update", value=s.get("next_update") or "Not announced yet")
         e.add_field(name="Known issues", value="\n".join(f"• {i}" for i in s["issues"]) or "None right now",
                     inline=False)
-        e.set_footer(text="Updates on its own")
+        e.set_footer(text="Status updates on its own")
         e.timestamp = discord.utils.utcnow()
-        await ensure_panel("status", channel(self.guild, "support"), embeds=[e])
+        await ensure_panel("support", channel(self.guild, "support"), embeds=[e, support_embed()],
+                           view=SupportView())
+        await self._drop_old_status_panel()
+
+    async def _drop_old_status_panel(self):
+        """The status board used to be its own message; remove that one (the bot's own post)."""
+        row = db.panel("status")
+        if not row:
+            return
+        try:
+            msg = await self.guild.get_channel(row["channel_id"]).fetch_message(row["message_id"])
+            await msg.delete()
+        except (discord.HTTPException, AttributeError):
+            pass
+        db.run("DELETE FROM panels WHERE name='status'")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.render_status()
 
     @tasks.loop(minutes=3)
     async def poll_game(self):

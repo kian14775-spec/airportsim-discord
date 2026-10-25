@@ -13,7 +13,7 @@ from asbot.paths import DATA, seed_once
 
 ROOT = Path(__file__).resolve().parent
 COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
-        "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community"]
+        "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community", "asbot.cogs.forums"]
 
 
 def setup_logging() -> None:

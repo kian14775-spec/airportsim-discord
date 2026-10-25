@@ -59,7 +59,7 @@ async def run(client: discord.Client):
     mod = g.get_role(state["role:moderator"])
     public = ["welcome", "roles", "announcements", "updates", "devlogs", "chat", "media", "liveries",
               "rp_servers", "support", "feedback", "create_party"]
-    staff = ["staff_chat", "logs", "inbox", "applications"]
+    staff = ["staff_chat", "logs", "inbox", "applications", "transcripts"]
 
     for key in public + staff:
         c = ch(key)
@@ -88,28 +88,39 @@ async def run(client: discord.Client):
     if unverified:
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
-    for name in ("welcome", "roles", "support", "status"):
-        row = db.panel(name)
-        ok = False
-        if row:
-            try:
-                await g.get_channel(row["channel_id"]).fetch_message(row["message_id"])
-                ok = True
-            except discord.HTTPException:
-                pass
-        check(ok, f"{name} panel posted")
+    for key, embeds_wanted in (("welcome", 1), ("roles", 1), ("support", 2)):
+        found = None
+        async for m in ch(key).history(limit=25):
+            if m.author.id == g.me.id and m.components:
+                found = m
+                break
+        check(found is not None and len(found.embeds) >= embeds_wanted,
+              f"{key} panel posted" + (" (status + ticket menu in one)" if key == "support" else ""))
 
     inbox = ch("inbox")
+    pinned = [t for t in inbox.threads if t.flags.pinned]
+    check(any("How the inbox works" in t.name for t in pinned), "inbox guide pinned")
     tag = lambda n: next(t for t in inbox.available_tags if t.name == n)
     made = await inbox.create_thread(name="[self-test] ticket flow", content="Automatic test, ignore.",
                                      applied_tags=[tag("Open")])
     th = made.thread
-    await th.edit(applied_tags=[tag("Waiting"), tag("Claimed")])
+    await th.edit(applied_tags=[tag("Waiting"), tag("Claimed"), tag("Urgent")])
     th = await client.fetch_channel(th.id)
-    check({t.name for t in th.applied_tags} == {"Waiting", "Claimed"}, "ticket tags switch")
-    await th.edit(applied_tags=[tag("Closed")], archived=True, locked=True)
-    th = await client.fetch_channel(th.id)
-    check(th.archived and th.locked, "ticket closes (archived + locked)")
+    check({t.name for t in th.applied_tags} == {"Waiting", "Claimed", "Urgent"}, "ticket tags switch")
+    from asbot.cogs.tickets import _html_doc, _html_row
+    rows = [_html_row(m) async for m in th.history(oldest_first=True)]
+    doc = _html_doc("[self-test] transcript", None, {"user_id": 0, "created": db.now()}, rows)
+    import io
+    out = await ch("transcripts").send("[self-test] transcript, ignore",
+                                       file=discord.File(io.BytesIO(doc.encode()), "self-test.html"))
+    check(bool(out.attachments), "transcript saved to #transcripts")
+    await th.delete()
+    try:
+        await client.fetch_channel(th.id)
+        check(False, "closed ticket removed from inbox")
+    except discord.NotFound:
+        check(True, "closed ticket removed from inbox")
+    await out.delete()
 
     hub = ch("create_party")
     vc = await g.create_voice_channel("[self-test] party", category=hub.category, overwrites=hub.overwrites)

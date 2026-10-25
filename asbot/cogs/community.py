@@ -29,29 +29,6 @@ def template_files() -> list[Path]:
     return sorted(p for p in TEMPLATES.iterdir() if p.suffix.lower() in TEMPLATE_EXT)
 
 
-class FeedbackModal(discord.ui.Modal):
-    def __init__(self, kind: str):
-        super().__init__(title="New suggestion" if kind == "Suggestion" else "Report a bug")
-        self.kind = kind
-        self.head = discord.ui.TextInput(label="Short title", max_length=90)
-        self.body = discord.ui.TextInput(label="Details" if kind == "Suggestion" else "What happens, and where?",
-                                         style=discord.TextStyle.paragraph, max_length=2000)
-        self.add_item(self.head)
-        self.add_item(self.body)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        forum = channel(interaction.guild, "feedback")
-        if not isinstance(forum, discord.ForumChannel):
-            return await interaction.response.send_message("Feedback isn't set up yet.", ephemeral=True)
-        tags = [t for t in forum.available_tags if t.name == self.kind]
-        made = await forum.create_thread(
-            name=self.head.value, applied_tags=tags,
-            content=f"{self.body.value}\n\n-# Posted by {interaction.user.mention}",
-            allowed_mentions=discord.AllowedMentions.none())
-        db.kv_set(f"feedback_author:{made.thread.id}", interaction.user.id)
-        await interaction.response.send_message(f"Posted: {made.thread.mention}", ephemeral=True)
-
-
 class PartyPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -119,15 +96,7 @@ class Community(commands.Cog):
         await self.ensure_templates_post()
         await self.cleanup_parties()
 
-    # ---------- feedback ----------
-    @app_commands.command(description="Suggest something for the game")
-    async def suggest(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(FeedbackModal("Suggestion"))
-
-    @app_commands.command(description="Report a bug in the game")
-    async def bug(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(FeedbackModal("Bug"))
-
+    # ---------- feedback (votes; /suggest and /bug live in forums.py) ----------
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
         fb, lv = channel(thread.guild, "feedback"), channel(thread.guild, "liveries")
@@ -286,6 +255,13 @@ class Community(commands.Cog):
             if votes > best[0]:
                 best = (votes, th, starter.author)
         db.kv_set("contest_start", None)
+        board = interaction.guild.get_thread(db.kv_get("contest_board") or 0)
+        if board:   # the live top-5 post is done once the winner is out
+            try:
+                await board.edit(pinned=False, archived=True, locked=True)
+            except discord.HTTPException:
+                pass
+        db.kv_set("contest_board", None)
         if not best[1]:
             return await interaction.followup.send("No Showcase posts with votes.", ephemeral=True)
         votes, th, author = best
@@ -301,7 +277,7 @@ class Community(commands.Cog):
             await ann.send(embed=embed("Livery of the Month winner", text))
         await th.send(f"This livery won Livery of the Month with {votes} votes!")
         await interaction.followup.send(f"Winner: {text}", ephemeral=True)
-        await log_staff(interaction.guild, f"Livery of the Month: {text} (add it to the game)")
+        await log_staff(interaction.guild, f"Livery of the Month: {text} (add it to the game)", kind="Bot")
 
     # ---------- party voice ----------
     @commands.Cog.listener()

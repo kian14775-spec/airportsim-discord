@@ -23,7 +23,20 @@ CREATE TABLE IF NOT EXISTS applications (id INTEGER PRIMARY KEY AUTOINCREMENT, u
     position TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', message_id INTEGER, created REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS parties (channel_id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS shipped (thread_id INTEGER PRIMARY KEY, notified REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS rp_posts (owner_id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL, created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS rp_stale (thread_id INTEGER PRIMARY KEY, warned REAL NOT NULL);
 """
+
+# Columns added after the first release (ALTER is skipped when they already exist)
+MIGRATIONS = [
+    "ALTER TABLE tickets ADD COLUMN last_activity REAL",
+    "ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'",
+    "ALTER TABLE tickets ADD COLUMN nudged INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN warned INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN transcript_channel INTEGER",
+    "ALTER TABLE tickets ADD COLUMN transcript_message INTEGER",
+    "ALTER TABLE applications ADD COLUMN thread_id INTEGER",
+]
 
 _conn: sqlite3.Connection | None = None
 
@@ -36,6 +49,11 @@ def conn() -> sqlite3.Connection:
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.executescript(SCHEMA)
+        for sql in MIGRATIONS:
+            try:
+                _conn.execute(sql)
+            except sqlite3.OperationalError:   # column already there
+                pass
     return _conn
 
 

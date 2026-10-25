@@ -9,6 +9,11 @@ _LAYOUTS = {discord.ForumLayoutType.gallery_view: "gallery", discord.ForumLayout
 _LAYOUT_ENUM = {"gallery": discord.ForumLayoutType.gallery_view, "list": discord.ForumLayoutType.list_view}
 
 
+def _tag(spec: str) -> discord.ForumTag:
+    """'Planned*' = a tag only staff can apply."""
+    return discord.ForumTag(name=spec.rstrip("*"), moderated=spec.endswith("*"))
+
+
 def _ctype(ch) -> str:
     if isinstance(ch, discord.CategoryChannel):
         return "category"
@@ -37,7 +42,7 @@ def snapshot(guild: discord.Guild) -> Snapshot:
             id=ch.id, name=ch.name, type=_ctype(ch), parent=ch.category_id, position=ch.position,
             overwrites=ow, topic=getattr(ch, "topic", None),
             slowmode=getattr(ch, "slowmode_delay", 0) or 0,
-            tags=[t.name for t in ch.available_tags] if forum else [],
+            tags=[t.name + ("*" if t.moderated else "") for t in ch.available_tags] if forum else [],
             require_tag=ch.flags.require_tag if forum else False,
             layout=_LAYOUTS.get(ch.default_layout) if forum else None,
         )
@@ -92,7 +97,7 @@ class DiscordBackend:
                 kw["default_layout"] = _LAYOUT_ENUM[spec.layout]
             ch = await self.guild.create_forum(
                 spec.name, category=cat, overwrites=ow, topic=spec.topic or "",
-                available_tags=[discord.ForumTag(name=t) for t in spec.tags or []],
+                available_tags=[_tag(t) for t in spec.tags or []],
                 reason=self.reason, **kw)
             if spec.require_tag:
                 await ch.edit(require_tag=True, reason=self.reason)
@@ -124,7 +129,15 @@ class DiscordBackend:
                 kw["default_layout"] = _LAYOUT_ENUM[v]
             elif k == "tags":
                 keep = {t.name: t for t in ch.available_tags}   # keep ids so posts keep their tags
-                kw["available_tags"] = [keep.get(n) or discord.ForumTag(name=n) for n in v]
+                tags = []
+                for n in v:
+                    t = keep.get(n.rstrip("*"))
+                    if t is None:
+                        t = _tag(n)
+                    else:
+                        t.moderated = n.endswith("*")
+                    tags.append(t)
+                kw["available_tags"] = tags
         await ch.edit(reason=self.reason, **kw)
 
     async def delete_category(self, category_id) -> None:

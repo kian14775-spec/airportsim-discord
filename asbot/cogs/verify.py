@@ -80,8 +80,26 @@ async def finish_link(interaction: discord.Interaction, roblox_id: int, roblox_n
     if roles_ch:
         e.add_field(name="Next", value=f"Pick your ping roles in {roles_ch.mention}.", inline=False)
     await interaction.followup.send(embed=e, ephemeral=True)
-    await log_staff(member.guild, f"Verified {member.mention} as **{roblox_name}** (`{roblox_id}`)")
+    await log_staff(member.guild, f"Verified {member.mention} as **{roblox_name}** (`{roblox_id}`)",
+                    kind="Verifications")
+    await welcome_dm(member)
     interaction.client.dispatch("roblox_linked", member, roblox_id)
+
+
+async def welcome_dm(member: discord.Member) -> None:
+    """One short DM after verifying, with the places worth knowing."""
+    g, game = member.guild, cfg()["game"]
+    spots = [(k, label) for k, label in (("roles", "pick your pings"), ("support", "get help"),
+                                          ("chat", "say hi"), ("rp_servers", "find a player airline"))
+             if channel(g, k)]
+    lines = [f"{channel(g, k).mention}: {label}" for k, label in spots]
+    e = embed(f"Welcome to {game['name']}, {member.display_name}!",
+              "You're all set. A few places to start:\n" + "\n".join(lines) +
+              f"\n\n[Play the game]({game['link']})")
+    try:
+        await member.send(embed=e)
+    except discord.HTTPException:
+        pass
 
 
 class UsernameModal(discord.ui.Modal, title="Verify with Roblox"):
@@ -120,26 +138,45 @@ class WelcomeView(discord.ui.View):
             problems = await apply_verified(interaction.user, link["roblox_id"], link["roblox_name"])
             msg = f"You're already verified as **{link['roblox_name']}**."
             return await interaction.followup.send("\n".join([msg, *problems]), ephemeral=True)
+        verified = role(interaction.guild, "verified")
+        if verified and verified in interaction.user.roles:   # verified earlier, e.g. through Bloxlink
+            return await interaction.response.send_message(
+                "You're already verified, nothing to do. You can still link your Roblox account here so "
+                "support can see it in your tickets.", view=LinkAnywayView(), ephemeral=True)
         await interaction.response.send_modal(UsernameModal())
 
 
-class RolesSelect(discord.ui.Select):
+class LinkAnywayView(discord.ui.View):
     def __init__(self):
-        opts = []
-        for p in cfg()["ping_roles"]:
-            opts.append(discord.SelectOption(label=p["label"], description=p.get("description"),
-                                             value=p["role"]))
-        super().__init__(placeholder="Choose what pings you", min_values=0, max_values=len(opts),
-                         options=opts, custom_id="asbot:roles:select")
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Link my Roblox account", style=discord.ButtonStyle.secondary)
+    async def link(self, interaction: discord.Interaction, _):
+        await interaction.response.send_modal(UsernameModal())
+
+
+# Role menus in #roles. "pings" lets you pick several, "platform" one.
+ROLE_GROUPS = {"pings": ("ping_roles", "Choose what pings you", True),
+               "platform": ("platform_roles", "What do you play on?", False)}
+
+
+class RoleGroupSelect(discord.ui.Select):
+    def __init__(self, group: str):
+        key, placeholder, multi = ROLE_GROUPS[group]
+        self.group, self.items = group, cfg().get(key, [])
+        opts = [discord.SelectOption(label=p["label"], description=p.get("description"), value=p["role"])
+                for p in self.items]
+        super().__init__(placeholder=placeholder, min_values=0, max_values=len(opts) if multi else 1,
+                         options=opts, custom_id=f"asbot:roles:{group}")
 
     async def callback(self, interaction: discord.Interaction):
         member, chosen = interaction.user, set(self.values)
-        add, remove, missing = [], [], []
-        for p in cfg()["ping_roles"]:
+        add, remove = [], []
+        for p in self.items:
             r = role(member.guild, p["role"])
             if r is None:
-                missing.append(p["label"])
-            elif p["role"] in chosen and r not in member.roles:
+                continue
+            if p["role"] in chosen and r not in member.roles:
                 add.append(r)
             elif p["role"] not in chosen and r in member.roles:
                 remove.append(r)
@@ -149,18 +186,23 @@ class RolesSelect(discord.ui.Select):
             if remove:
                 await member.remove_roles(*remove, reason="roles panel")
         except discord.Forbidden:
-            await log_staff(member.guild, "Roles panel: my role is below the ping roles. Move it up.")
+            await log_staff(member.guild, "Roles panel: my role is below a menu role. Move it up.")
             return await interaction.response.send_message("I can't give that role right now. Staff have been told.",
                                                            ephemeral=True)
-        now = [p["label"] for p in cfg()["ping_roles"] if p["role"] in chosen]
-        await interaction.response.send_message(
-            ("You'll get pings for: " + ", ".join(now)) if now else "You won't get any pings.", ephemeral=True)
+        now = [p["label"] for p in self.items if p["role"] in chosen]
+        if self.group == "pings":
+            text = ("You'll get pings for: " + ", ".join(now)) if now else "You won't get any pings."
+        else:
+            text = f"Platform set to {now[0]}." if now else "Platform cleared."
+        await interaction.response.send_message(text, ephemeral=True)
 
 
 class RolesView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(RolesSelect())
+        for group, (key, _, _) in ROLE_GROUPS.items():
+            if cfg().get(key):
+                self.add_item(RoleGroupSelect(group))
 
 
 class Verify(commands.Cog):
@@ -180,7 +222,7 @@ class Verify(commands.Cog):
                   "Read the rules above, then press **Verify** and link your Roblox account. "
                   "It takes under a minute.\n\nNeed help? Verify first, then use #support.")])
         await ensure_panel("roles", channel(guild, "roles"), view=RolesView(), embeds=[
-            embed("Pick your pings", "Choose what you want to be pinged for. Change it any time.\n\n" +
+            embed("Your roles", "Pick what pings you, and what you play on. Change it any time.\n\n" +
                   "\n".join(f"**{p['label']}**: {p.get('description', '')}" for p in cfg()["ping_roles"]))])
 
     @commands.Cog.listener()
@@ -208,6 +250,34 @@ class Verify(commands.Cog):
     async def unlink(self, interaction: discord.Interaction):
         db.run("DELETE FROM links WHERE discord_id=?", interaction.user.id)
         await interaction.response.send_message("Unlinked. Press Verify in #welcome to link again.", ephemeral=True)
+
+    # ---------- staff log threads: joins/leaves and moderation ----------
+    @commands.Cog.listener("on_member_join")
+    async def _log_join(self, member: discord.Member):
+        age = (discord.utils.utcnow() - member.created_at).days
+        await log_staff(member.guild, f"📥 {member.mention} joined · account {age} days old"
+                                      + (" ⚠️ new account" if age < 7 else ""), kind="Joins and leaves")
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        await log_staff(member.guild, f"📤 {member} left", kind="Joins and leaves")
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
+        await log_staff(guild, f"🔨 {user} was banned", kind="Moderation")
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
+        await log_staff(guild, f"♻️ {user} was unbanned", kind="Moderation")
+
+    @commands.Cog.listener("on_member_update")
+    async def _log_timeout(self, before: discord.Member, after: discord.Member):
+        if before.timed_out_until != after.timed_out_until:
+            if after.timed_out_until:
+                await log_staff(after.guild, f"🔇 {after.mention} timed out until "
+                                             f"<t:{int(after.timed_out_until.timestamp())}:f>", kind="Moderation")
+            else:
+                await log_staff(after.guild, f"🔈 {after.mention} timeout removed", kind="Moderation")
 
 
 async def setup(bot):

@@ -28,6 +28,10 @@ roles:  # top to bottom. Existing roles are only referenced (name only = the bot
   - {key: ping_updates,       name: "| Updates |"}
   - {key: ping_polls,         name: "| Polls |"}
   - {key: livery_winner,      name: Livery of the Month, color: "#F1C40F"}
+  - {key: plat_pc,      name: PC}
+  - {key: plat_mobile,  name: Mobile}
+  - {key: plat_console, name: Console}
+  - {key: plat_vr,      name: VR}
 
 # Role groups usable in presets like a single role.
 groups:
@@ -89,7 +93,7 @@ categories:
         type: forum
         require_tag: true
         topic: Suggestions, bugs and UI ideas. Vote on the ones you like.
-        tags: [Suggestion, Bug, UI, Planned, Done]
+        tags: [Suggestion, Bug, UI, New*, Under review*, Planned*, Done*]   # * = only staff can set
 
   - key: staff
     name: STAFF
@@ -102,8 +106,13 @@ categories:
         name: ︱inbox
         type: forum
         topic: Every support ticket is a post here.
-        tags: [Open, Claimed, Waiting, Dev team, Appeal, Closed]
-      - {key: applications, name: ︱applications}
+        tags: [Open, Claimed, Waiting, Urgent, Dev team, Appeal]
+      - key: applications
+        name: ︱applications
+        type: forum
+        topic: Every staff application is a post here. Vote, discuss, then accept or deny.
+        tags: [Pending, Accepted, Denied]
+      - {key: transcripts, name: ︱transcripts, topic: "Closed tickets: summary card + full transcript file."}
 
 # Permission presets. Role names: @everyone, or any role key/name above.
 presets:
