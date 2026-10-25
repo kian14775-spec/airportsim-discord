@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DB_FILE = ROOT / "data" / "bot.db"
+from .paths import DATA
+
+DB_FILE = DATA / "data" / "bot.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS links (discord_id INTEGER PRIMARY KEY, roblox_id INTEGER NOT NULL,
@@ -31,7 +31,7 @@ _conn: sqlite3.Connection | None = None
 def conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        DB_FILE.parent.mkdir(exist_ok=True)
+        DB_FILE.parent.mkdir(parents=True, exist_ok=True)
         _conn = sqlite3.connect(DB_FILE, isolation_level=None)   # autocommit
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")

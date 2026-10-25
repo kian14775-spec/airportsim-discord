@@ -1,0 +1,9 @@
+.venv/
+.env
+/logs/
+/data/
+/state/
+/backups/
+*.key
+__pycache__/
+.git/

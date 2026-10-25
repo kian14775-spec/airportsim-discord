@@ -1,21 +1,25 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-10-25, s2)
-State: LIVE on the Airport Simulator server (guild 1347984080842788914). Layout applied (server matches
-layout/server.yaml; pre-change backup in backups/). All features built: verify, roles panel, inbox tickets
-(+triage, profile, queue, ratings, saved replies, notes, dev handoff, monthly leaderboard), appeals,
-applications, /announce, status board + player count, /suggest /bug + shipped DMs, templates + Livery of
-the Month, party voice, perks writer. tools/selftest.py = 45/50 PASS (the 5 fails = role height).
-Bot currently runs on Kian's PC (background process from the Claude session), NOT 24/7 yet.
+## RESUME HERE (2026-10-25, s3)
+State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve"
+(free plan = 1 project, reused), service "my-bot", volume "my-bot-volume" at /data (db, layout ids, templates,
+logs). Repo folder is `railway link`ed. Selftest 50/50 against the Railway bot. NO copy runs on the PC.
 Next:
-1. DONE 2026-10-25: bot role dragged up; selftest 50/50.
-2. Kian: reset the bot token (it was printed once in chat) and paste the new one in .env; Oracle VM per SETUP.md -> deploy\deploy.ps1 -FirstTime.
-3. Kian: Open Cloud key (group-owned, Airport Simulator: user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY (appeals ban info/unban, perks). Game-side perks script not installed yet.
-4. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots (replaced); click-test verify + a ticket with a real account.
+1. Kian: reset the bot token (printed once in chat) -> run deployailway_vars.ps1 (reads .env, no values shown) -> it redeploys.
+2. Kian: Open Cloud key (group-owned, user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY -> deployailway_vars.ps1.
+3. Before 2026-12-01: Railway drops railway.json (config-as-code) -> run `railway config migrate`.
+4. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots; in-game perks script (Studio).
+
+## Deploying (Railway)
+- Code change: `railway up --detach` from the repo (CLI login lives in the real user profile; from Claude's
+  tools run railway with the sandbox disabled, or in a terminal tab).
+- Logs: `railway logs --lines 50`. Status: `railway service status`.
+- First boot on an empty volume copies seed/ (layout ids + panel ids) in; never overwrites live data.
 
 ## How layout changes work
-Kian says what to change -> edit layout/server.yaml (keep `key`, add old names to `was`) ->
-`deploy\deploy.ps1 -Layout preview` -> show him -> `-Layout apply`. Before the Oracle VM exists: `python layout.py preview|apply` on the PC.
+Kian says what to change -> edit layout/server.yaml (keep `key`, add old names to `was`) -> `railway up` ->
+in Discord `/layout preview` then `/layout apply` (runs ON Railway, so its state on the volume stays the truth).
+Don't use `python layout.py apply` on the PC any more: the PC state copy would drift from the server's.
 State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT APPLIED; features look up channels with sync.channel_id(guild, key).
 
 ## Map
@@ -26,3 +30,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 ## Log
 - 2026-10-25 s1: layout + bot features locked in chat; built layout engine, bot core, Oracle deploy; tests pass.
 - 2026-10-25 s2: found old token in ~/my-bot/.env (same bot app); mapped layout onto existing roles (Traveler=verified, staff group); applied live, archived 15 old ticket channels; built all features; selftest 45/50.
+- 2026-10-25 s3: moved hosting to Railway (Oracle card declined); volume + seed; old project vars removed; selftest 50/50.

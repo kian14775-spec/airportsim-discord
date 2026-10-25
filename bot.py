@@ -9,15 +9,18 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from asbot.paths import DATA, seed_once
+
 ROOT = Path(__file__).resolve().parent
 COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
         "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community"]
 
 
 def setup_logging() -> None:
-    (ROOT / "logs").mkdir(exist_ok=True)
+    logs = DATA / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    file = RotatingFileHandler(ROOT / "logs" / "bot.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8")
+    file = RotatingFileHandler(logs / "bot.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8")
     file.setFormatter(fmt)
     console = logging.StreamHandler()
     console.setFormatter(fmt)
@@ -46,7 +49,10 @@ class AirportBot(commands.Bot):
 
 async def main():
     load_dotenv(ROOT / ".env")
+    seed_once()
     setup_logging()
+    logging.info("data folder %s, seed in image: %s, state files: %s", DATA, (ROOT / "seed").exists(),
+                 [p.name for p in (DATA / "state").glob("*.json")])
     bot = AirportBot()
     async with bot:
         await bot.start(os.environ["DISCORD_TOKEN"])   # reconnects on its own after drops

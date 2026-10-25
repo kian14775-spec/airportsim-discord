@@ -10,10 +10,11 @@ from . import model
 from .discord_backend import DiscordBackend, snapshot
 from .executor import execute
 from .planner import Plan, plan
+from ..paths import DATA
 
 ROOT = Path(__file__).resolve().parents[2]
 LAYOUT_FILE = ROOT / "layout" / "server.yaml"
-STATE_DIR = ROOT / "state"
+STATE_DIR = DATA / "state"
 
 
 def _state_file(guild_id: int) -> Path:
@@ -26,7 +27,7 @@ def load_state(guild_id: int) -> dict[str, int]:
 
 
 def save_state(guild_id: int, state: dict[str, int]) -> None:
-    STATE_DIR.mkdir(exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _state_file(guild_id).with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
     tmp.replace(_state_file(guild_id))

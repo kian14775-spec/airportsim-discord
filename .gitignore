@@ -1,9 +1,9 @@
 .venv/
 .env
-logs/
-state/
+/logs/
+/state/
 __pycache__/
 *.pyc
 *.key
-backups/
-data/
+/backups/
+/data/

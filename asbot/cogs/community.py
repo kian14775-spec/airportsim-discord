@@ -12,10 +12,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from .. import db, opencloud
-from ..core import ROOT, cfg, channel, embed, is_staff, log, log_staff, role, staff_only
+from ..paths import DATA
+from ..core import cfg, channel, embed, is_staff, log, log_staff, role, staff_only
 
 UPVOTE = "👍"
-TEMPLATES = ROOT / "data" / "templates"
+TEMPLATES = DATA / "data" / "templates"
 TEMPLATE_EXT = {".png", ".jpg", ".jpeg", ".psd", ".zip", ".pdn", ".kra"}
 
 
