@@ -141,6 +141,18 @@ async def roblox_group_rank(user_id: int, group_id: int) -> str | None:
     return None
 
 
+async def group_info(group_id: int) -> dict | None:
+    async with http().get(f"https://groups.roblox.com/v1/groups/{group_id}") as r:
+        return await r.json() if r.status == 200 else None
+
+
+async def game_votes() -> dict | None:
+    uid = cfg()["game"]["universe_id"]
+    async with http().get(f"https://games.roblox.com/v1/games/votes?universeIds={uid}") as r:
+        data = (await r.json()).get("data", []) if r.status == 200 else []
+    return data[0] if data else None
+
+
 async def game_stats() -> dict | None:
     uid = cfg()["game"]["universe_id"]
     async with http().get(f"https://games.roblox.com/v1/games?universeIds={uid}") as r:

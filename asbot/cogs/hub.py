@@ -1,5 +1,5 @@
 """/help for members and /staff for the team: one tidy panel each instead of many commands.
-Also keeps a live summary card pinned at the top of staff-chat.
+The live staff card and daily report live in stats.py.
 """
 from __future__ import annotations
 
@@ -7,11 +7,10 @@ import datetime as dt
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 from .. import db, ui
-from ..core import channel, staff_only
-from ..panels import ensure_panel
+from ..core import staff_only
 from .community import template_files
 from .forums import FeedbackModal, RpModal
 from .news import PINGS, STATES, TARGETS
@@ -104,6 +103,7 @@ ACTIONS = [("announce", "Post an announcement", "announcements, dev-logs or soci
            ("issues", "Known issues and next update", "What shows on the support card"),
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
            ("member", "Look up a member", "Roblox link, tickets, roles"),
+           ("today", "Today's numbers", "Joins, visits, group, tickets so far today"),
            ("stats", "Support numbers", "This month's tickets and ratings"),
            ("health", "Bot health", "Latency and uptime")]
 
@@ -127,6 +127,8 @@ class StaffMenu(discord.ui.Select):
             return await interaction.response.send_message("Livery of the Month:", view=ContestView(), ephemeral=True)
         if act == "member":
             return await interaction.response.send_message("Who?", view=_private([MemberPick()]), ephemeral=True)
+        if act == "today":
+            return await interaction.response.send_message(embed=await bot.get_cog("Stats").so_far(), ephemeral=True)
         if act == "stats":
             e = bot.get_cog("Tickets").stats_embed(dt.datetime.now(dt.timezone.utc))
             return await interaction.response.send_message(embed=e, ephemeral=True)
@@ -220,10 +222,6 @@ class MemberPick(discord.ui.UserSelect):
 class Hub(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.summary.start()
-
-    def cog_unload(self):
-        self.summary.cancel()
 
     @property
     def guild(self) -> discord.Guild:
@@ -243,42 +241,6 @@ class Hub(commands.Cog):
     async def staff(self, interaction: discord.Interaction):
         e = ui.card("Staff tools", "Pick what you want to do. Everything here only shows to you.", tone="brand")
         await interaction.response.send_message(embed=e, view=_private([StaffMenu()]), ephemeral=True)
-
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        key = f"joins:{dt.date.today():%Y-%m-%d}"
-        db.kv_set(key, db.kv_get(key, 0) + 1)
-
-    @tasks.loop(minutes=5)
-    async def summary(self):
-        ch = channel(self.guild, "staff_chat") if self.guild else None
-        if not ch:
-            return
-        q = lambda sql, *a: db.one(sql, *a)["n"]
-        day = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        players = getattr(self.bot.get_cog("News"), "players", None)
-        open_n = q("SELECT COUNT(*) n FROM tickets WHERE status NOT IN ('closed')")
-        need = q("SELECT COUNT(*) n FROM tickets WHERE status='open'")
-        urgent = q("SELECT COUNT(*) n FROM tickets WHERE status!='closed' AND priority='urgent'")
-        apps = q("SELECT COUNT(*) n FROM applications WHERE status='pending'")
-        verified = q("SELECT COUNT(*) n FROM links WHERE linked_at>=?", day)
-        joins = db.kv_get(f"joins:{dt.date.today():%Y-%m-%d}", 0)
-        inbox = channel(self.guild, "inbox")
-        tone = "bad" if urgent else ("wait" if need else "good")
-        e = ui.card("Right now", ui.kv(
-            ("Tickets open", f"{open_n}" + (f" · **{need} need a reply**" if need else " · all answered")),
-            ("Urgent", str(urgent) if urgent else "none"),
-            ("Applications waiting", str(apps)),
-            ("Players in game", f"{players:,}" if players is not None else "-"),
-            ("Today", f"{joins} joined · {verified} verified")), tone=tone)
-        e.timestamp = discord.utils.utcnow()
-        if inbox:
-            e.add_field(name="​", value=f"[Open the inbox]({inbox.jump_url})", inline=False)
-        await ensure_panel("staff_summary", ch, embeds=[e], pin=True)
-
-    @summary.before_loop
-    async def _ready(self):
-        await self.bot.wait_until_ready()
 
 
 async def setup(bot):

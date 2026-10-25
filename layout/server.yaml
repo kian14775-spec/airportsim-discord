@@ -74,7 +74,7 @@ categories:
     perms: members
     channels:
       - {key: chat,  name: general, was: [chat], slowmode: 3}
-      - {key: media, name: media, was: [screenshots], topic: "Screenshots and clips from the game."}
+      - {key: media, name: media, was: [screenshots], topic: "Screenshots and clips from the game"}
       - {key: create_party, name: lounge, was: [Create Party], type: voice, perms: voice}
 
   - key: hangar
@@ -89,8 +89,8 @@ categories:
         topic: Templates are in the pinned post. Share your liveries here.
         tags: [Template, Showcase, WIP]
       - key: rp_servers
-        name: airlines
-        was: [rp-servers]
+        name: rp-servers
+        was: [airlines]
         type: forum
         require_tag: true
         topic: One post per airline or private server. Name, fleet, how to join.
@@ -102,6 +102,7 @@ categories:
     perms: staff
     channels:
       - {key: staff_chat,   name: staff-chat, was: [moderator-only]}
+      - {key: stats, name: stats, topic: "Live numbers on top, a daily report every day at midnight UTC."}
       - {key: logs,         name: logs, was: [mod-logs]}
       - key: inbox
         name: inbox

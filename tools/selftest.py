@@ -59,7 +59,7 @@ async def run(client: discord.Client):
     mod = g.get_role(state["role:moderator"])
     public = ["welcome", "announcements", "devlogs", "socials", "chat", "media", "liveries", "rp_servers", "support", "feedback",
               "create_party"]
-    staff = ["staff_chat", "logs", "inbox", "applications"]
+    staff = ["staff_chat", "stats", "logs", "inbox", "applications"]
 
     for key in public + staff:
         c = ch(key)
@@ -88,14 +88,14 @@ async def run(client: discord.Client):
     if unverified:
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
-    for key, embeds_wanted in (("welcome", 1), ("support", 2)):
+    for key, embeds_wanted in (("welcome", 1), ("support", 1)):
         found = None
         async for m in ch(key).history(limit=25):
             if m.author.id == g.me.id and m.components:
                 found = m
                 break
         check(found is not None and len(found.embeds) >= embeds_wanted,
-              f"{key} panel posted" + (" (status + ticket menu in one)" if key == "support" else ""))
+              f"{key} panel posted")
 
     inbox = ch("inbox")
     pinned = [t for t in inbox.threads if t.flags.pinned]

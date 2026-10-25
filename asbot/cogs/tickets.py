@@ -430,12 +430,6 @@ class SupportView(discord.ui.View):
         await interaction.client.get_cog("Applications").start(interaction)
 
 
-def support_embed() -> discord.Embed:
-    return embed("Support", "Pick a topic below and tell us what's wrong. You'll often get an answer straight "
-                            "away. If not, a ticket opens and the team replies **in your DMs**.\n\n"
-                            "Make sure DMs from server members are on.")
-
-
 class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot

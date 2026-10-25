@@ -15,7 +15,10 @@ SEED = ROOT / "seed"
 
 def merge_seed_state() -> None:
     """Add layout ids that exist in seed/state but not on the volume (e.g. a section
-    created by a layout apply from the PC). Existing ids are never changed."""
+    created by a layout apply from the PC). Existing ids are never changed.
+    The "what was last applied" file is copied over as-is (the PC applies the layout)."""
+    for src in (SEED / "state").glob("applied_*.json"):
+        shutil.copy2(src, DATA / "state" / src.name)
     for src in (SEED / "state").glob("ids_*.json"):
         dst = DATA / "state" / src.name
         if not dst.exists():

@@ -100,20 +100,24 @@ class News(commands.Cog):
         await self.render_status()
 
     async def render_status(self):
-        """One message in #support: live game status on top, the ticket menu below."""
-        from .tickets import SupportView, support_embed
+        """One card in #support: a one-line game status, known issues if any, then how to get help."""
+        from .tickets import SupportView
         s = status()
         name, colour = STATES.get(s["state"], STATES["ok"])
-        e = embed(f"Game status · {name}", colour=discord.Colour(colour))
+        dot = {"ok": "🟢", "issues": "🟡", "down": "🔴", "maintenance": "🔵"}.get(s["state"], "🟢")
+        bits = [f"{dot} **{name}**"]
         if self.players is not None:
-            e.add_field(name="Playing now", value=f"{self.players:,}")
-        e.add_field(name="Next update", value=s.get("next_update") or "Not announced yet")
-        e.add_field(name="Known issues", value="\n".join(f"• {i}" for i in s["issues"]) or "None right now",
-                    inline=False)
-        e.set_footer(text="Status updates on its own")
+            bits.append(f"{self.players:,} playing")
+        bits.append(f"next update: {s.get('next_update') or 'not announced'}")
+        body = "  ·  ".join(bits)
+        if s["issues"]:
+            body += "\n\n**Known issues**\n" + "\n".join(f"• {i}" for i in s["issues"])
+        body += ("\n\n**Need help?** Pick a topic below. You'll often get an answer straight away; "
+                 "if not, a ticket opens and the team replies **in your DMs**.\n"
+                 "-# Make sure DMs from server members are on.")
+        e = embed("Support", body, colour=discord.Colour(colour))
         e.timestamp = discord.utils.utcnow()
-        await ensure_panel("support", channel(self.guild, "support"), embeds=[e, support_embed()],
-                           view=SupportView())
+        await ensure_panel("support", channel(self.guild, "support"), embeds=[e], view=SupportView())
         await self._drop_old_status_panel()
 
     async def _drop_old_status_panel(self):
@@ -141,6 +145,9 @@ class News(commands.Cog):
             return
         if g:
             self.players = g.get("playing")
+            day = f"peak:{discord.utils.utcnow():%Y-%m-%d}"   # for the daily stats report
+            if self.players and self.players > db.kv_get(day, 0):
+                db.kv_set(day, self.players)
             await self.bot.change_presence(activity=discord.Activity(
                 type=discord.ActivityType.watching, name=f"{self.players:,} players fly"))
         if self.guild:
