@@ -5,7 +5,7 @@ State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Proj
 (free plan = 1 project, reused), service "my-bot", volume "my-bot-volume" at /data (db, layout ids, templates,
 logs). Repo folder is `railway link`ed. Selftest 50/50 against the Railway bot. NO copy runs on the PC.
 Next:
-1. Kian: reset the bot token (printed once in chat) -> run deployailway_vars.ps1 (reads .env, no values shown) -> it redeploys.
+1. DONE 2026-10-25: token reset privately (never in chat), pushed to Railway; selftest 50/50.
 2. Kian: Open Cloud key (group-owned, user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY -> deployailway_vars.ps1.
 3. Before 2026-12-01: Railway drops railway.json (config-as-code) -> run `railway config migrate`.
 4. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots; in-game perks script (Studio).
@@ -31,3 +31,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-25 s1: layout + bot features locked in chat; built layout engine, bot core, Oracle deploy; tests pass.
 - 2026-10-25 s2: found old token in ~/my-bot/.env (same bot app); mapped layout onto existing roles (Traveler=verified, staff group); applied live, archived 15 old ticket channels; built all features; selftest 45/50.
 - 2026-10-25 s3: moved hosting to Railway (Oracle card declined); volume + seed; old project vars removed; selftest 50/50.
+- 2026-10-25 s3b: token reset via .env only (Notepad paste had glued GUILD_ID onto the token line; split it). selftest 50/50 on Railway.
