@@ -3,6 +3,7 @@
 Locally that's the repo folder. On Railway, ASBOT_DATA points at the mounted volume,
 so data survives redeploys. On a fresh volume the repo's seed/ copy is used once.
 """
+import json
 import os
 import shutil
 from pathlib import Path
@@ -12,10 +13,26 @@ DATA = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or os.environ.get("ASBOT
 SEED = ROOT / "seed"
 
 
+def merge_seed_state() -> None:
+    """Add layout ids that exist in seed/state but not on the volume (e.g. a section
+    created by a layout apply from the PC). Existing ids are never changed."""
+    for src in (SEED / "state").glob("ids_*.json"):
+        dst = DATA / "state" / src.name
+        if not dst.exists():
+            continue
+        live, seed = json.loads(dst.read_text()), json.loads(src.read_text())
+        added = {k: v for k, v in seed.items() if k not in live}
+        if added:
+            dst.write_text(json.dumps({**live, **added}, indent=2, sort_keys=True))
+
+
 def seed_once() -> None:
     """Fill a fresh volume from seed/: only when it has no layout ids yet, so live data
     is never overwritten."""
-    if DATA == ROOT or not SEED.exists() or any((DATA / "state").glob("ids_*.json")):
+    if DATA == ROOT or not SEED.exists():
+        return
+    if any((DATA / "state").glob("ids_*.json")):
+        merge_seed_state()
         return
     for src in SEED.rglob("*"):
         if src.is_file():

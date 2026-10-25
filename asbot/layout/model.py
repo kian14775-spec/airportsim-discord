@@ -62,9 +62,12 @@ class Layout:
     groups: dict[str, list[str]] = field(default_factory=dict)
 
 
+SMALL_CAPS = str.maketrans("ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡʏᴢ", "abcdefghijklmnopqrstuvwyz")
+
+
 def norm(name: str) -> str:
-    """'│ Information' -> 'information'. Used to match old channels by name."""
-    return re.sub(r"[^a-z0-9-]", "", name.lower())
+    """'│ Information' / '︱ɪɴꜰᴏʀᴍᴀᴛɪᴏɴ' -> 'information'. Used to match channels by name."""
+    return re.sub(r"[^a-z0-9-]", "", name.translate(SMALL_CAPS).lower())
 
 
 def perm_bits(flags: list[str] | None, where: str) -> int:

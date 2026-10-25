@@ -35,57 +35,61 @@ groups:
 
 categories:
   - key: start
-    name: START HERE
-    was: [CHECK-IN, BULLETIN]
+    name: ᴡᴇʟᴄᴏᴍᴇ
+    was: [START HERE, CHECK-IN, BULLETIN]
     perms: readonly
     channels:
       - key: welcome
-        name: welcome
-        was: [information, verify]
+        name: ︱ᴡᴇʟᴄᴏᴍᴇ
+        was: [welcome, information, verify]
         perms: welcome
         topic: Rules, info and verify. Start here.
       - key: roles
-        name: roles
-        was: [reaction-roles]
+        name: ︱ʀᴏʟᴇꜱ
+        was: [roles, reaction-roles]
         topic: Pick your ping roles.
 
   - key: game
-    name: AIRPORT SIMULATOR
+    name: ɴᴇᴡꜱ
+    was: [AIRPORT SIMULATOR]
     perms: readonly
     channels:
-      - {key: announcements, name: announcements, type: announcement, topic: "News, polls and socials."}
-      - {key: updates,       name: updates,       type: announcement, topic: "Release notes for every update."}
-      - {key: devlogs,       name: dev-logs,      type: announcement, topic: "Behind the scenes and sneak peeks."}
+      - {key: announcements, name: ︱ᴀɴɴᴏᴜɴᴄᴇᴍᴇɴᴛꜱ, type: announcement, topic: "News, polls and socials."}
+      - {key: updates,       name: ︱ᴜᴘᴅᴀᴛᴇꜱ,       type: announcement, topic: "Release notes for every update."}
+      - {key: devlogs,       name: ︱ᴅᴇᴠ-ʟᴏɢꜱ,      type: announcement, topic: "Behind the scenes and sneak peeks."}
 
   - key: community
-    name: COMMUNITY
+    name: ᴄᴏᴍᴍᴜɴɪᴛʏ
     perms: members
     channels:
-      - {key: chat,  name: chat,  slowmode: 3}
-      - {key: media, name: media, topic: "Screenshots and clips from the game."}
+      - {key: chat,  name: ︱ᴄʜᴀᴛ,  slowmode: 3}
+      - {key: media, name: ︱ᴍᴇᴅɪᴀ, topic: "Screenshots and clips from the game."}
+
+  - key: hangar
+    name: ʜᴀɴɢᴀʀ
+    perms: forum
+    channels:
       - key: liveries
-        name: liveries
+        name: ︱ʟɪᴠᴇʀɪᴇꜱ
         type: forum
-        perms: forum
         layout: gallery
         require_tag: true
         topic: Templates are in the pinned post. Share your liveries here.
         tags: [Template, Showcase, WIP]
       - key: rp_servers
-        name: rp-servers
+        name: ︱ʀᴘ-ꜱᴇʀᴠᴇʀꜱ
         type: forum
-        perms: forum
         require_tag: true
         topic: One post per airline or private server. Name, fleet, how to join.
         tags: [Airline, Airport, Cargo, Hiring]
 
   - key: support
-    name: SUPPORT
+    name: ꜱᴜᴘᴘᴏʀᴛ
     perms: readonly
     channels:
-      - {key: support, name: support, was: [support-center], topic: "Need help? Use the buttons below."}
+      - {key: support, name: ︱ꜱᴜᴘᴘᴏʀᴛ, was: [support-center], topic: "Need help? Use the buttons below."}
       - key: feedback
-        name: feedback
+        name: ︱ꜰᴇᴇᴅʙᴀᴄᴋ
         was: [suggestions]
         type: forum
         perms: forum
@@ -94,25 +98,25 @@ categories:
         tags: [Suggestion, Bug, UI, Planned, Done]
 
   - key: voice
-    name: VOICE
-    was: [PARTIES]
+    name: ʟᴏᴜɴɢᴇ
+    was: [VOICE, PARTIES]
     perms: voice
     channels:
-      - {key: create_party, name: Create Party, type: voice}  # later: join-to-create
+      - {key: create_party, name: "︱ᴄʀᴇᴀᴛᴇ ᴘᴀʀᴛʏ", type: voice}
 
   - key: staff
-    name: STAFF
+    name: ꜱᴛᴀꜰꜰ
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: staff-chat, was: [moderator-only]}
-      - {key: logs,         name: logs, was: [mod-logs]}
+      - {key: staff_chat,   name: ︱ꜱᴛᴀꜰꜰ-ᴄʜᴀᴛ, was: [moderator-only]}
+      - {key: logs,         name: ︱ʟᴏɢꜱ, was: [mod-logs]}
       - key: inbox
-        name: inbox
+        name: ︱ɪɴʙᴏx
         type: forum
         topic: Every support ticket is a post here.
         tags: [Open, Claimed, Waiting, Dev team, Appeal, Closed]
-      - {key: applications, name: applications}
+      - {key: applications, name: ︱ᴀᴘᴘʟɪᴄᴀᴛɪᴏɴꜱ}
 
 # Permission presets. Role names: @everyone, or any role key/name above.
 presets:

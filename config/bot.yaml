@@ -92,4 +92,4 @@ livery_contest:
   vote_emoji: "⭐"
 
 party:
-  name_format: "{name}'s party"
+  name_format: "︱{name} · ᴘᴀʀᴛʏ"
