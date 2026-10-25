@@ -8,7 +8,7 @@ applications, /announce, status board + player count, /suggest /bug + shipped DM
 the Month, party voice, perks writer. tools/selftest.py = 45/50 PASS (the 5 fails = role height).
 Bot currently runs on Kian's PC (background process from the Claude session), NOT 24/7 yet.
 Next:
-1. Kian: drag the bot role "Airport Simulator" above Traveler + Unverified + the | X | ping roles; rerun tools/selftest.py.
+1. DONE 2026-10-25: bot role dragged up; selftest 50/50.
 2. Kian: reset the bot token (it was printed once in chat) and paste the new one in .env; Oracle VM per SETUP.md -> deploy\deploy.ps1 -FirstTime.
 3. Kian: Open Cloud key (group-owned, Airport Simulator: user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY (appeals ban info/unban, perks). Game-side perks script not installed yet.
 4. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots (replaced); click-test verify + a ticket with a real account.
