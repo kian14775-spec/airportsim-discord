@@ -9,7 +9,8 @@ Get-Content "$root\.env" | Where-Object { $_ -match '^\s*([A-Z_]+)\s*=\s*(.*)$' 
 }
 foreach ($k in $keys) {
     if ($vals[$k]) {
-        $vals[$k] | railway variable set $k --stdin --skip-deploys | Out-Null
+        # value goes as an argument: piping into stdin from Windows PowerShell adds a BOM
+        railway variable set "$k=$($vals[$k])" --skip-deploys | Out-Null
         Write-Host "set $k"
     }
 }
