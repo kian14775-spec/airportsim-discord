@@ -50,6 +50,10 @@ class FakeBackend:
         for k, v in fields.items():
             setattr(ch, k, v)
 
+    async def delete_category(self, category_id):
+        assert not any(c.parent == category_id for c in self.snap.channels.values())
+        del self.snap.channels[category_id]
+
     async def reorder(self, order):
         for i, pos, parent in order:
             self.snap.channels[i].position = pos
@@ -122,6 +126,19 @@ def test_old_server_reuses_and_archives():
     archive = state["cat:_archive"]
     assert snap.channels[12].parent == archive and snap.channels[22].parent == archive
     assert plan(lay, snap, state).changes == []
+
+
+def test_empty_bot_section_is_removed():
+    lay, snap = model.load(LAYOUT), empty()
+    state = sync(lay, snap, {})
+    lay2 = copy.deepcopy(lay)
+    moved = lay2.categories.pop(-2)             # drop a section; its channels go to the first one
+    lay2.categories[0].channels += moved.channels
+    p = plan(lay2, snap, state)
+    assert [a.op for a in p.changes][-1] == "remove_category"
+    state = run(execute(p, lay2, FakeBackend(snap), state, log=lambda _: None))
+    assert f"cat:{moved.key}" not in state
+    assert plan(lay2, snap, state).changes == []
 
 
 def test_community_required():

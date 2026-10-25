@@ -219,11 +219,26 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
                               + ", ".join("#" + c.name for c in movable),
                               {"ids": [c.id for c in movable]}))
 
+    # Sections the bot made earlier that end up empty (their channels moved) are removed.
+    # Only bot-made ones (their id is in the state file); a section people made is never touched.
+    bot_made = {v: k for k, v in state.items() if k.startswith("cat:") and k != cat_ref(ARCHIVE_KEY)}
+    for c in extras:
+        if c.type != "category" or c.id not in bot_made:
+            continue
+        kids = [x for x in snap.channels.values() if x.type != "category" and x.parent == c.id]
+        leaving = all(k.id in managed_ids or (archive_extras and k.id not in ignore) for k in kids)
+        if leaving and not any(k.id in ignore for k in kids):
+            actions.append(Action("remove_category", bot_made[c.id], f"- remove empty section {c.name}",
+                                  {"id": c.id}))
+
     # ---- order ----
     needed = any(a.op in ("create_category", "create_channel") for a in actions) or \
         _order_differs(layout, snap, matches)
+    removals = [a for a in actions if a.op == "remove_category"]
+    actions = [a for a in actions if a.op != "remove_category"]
     actions.append(Action("reorder", "", "> put categories and channels in layout order",
-                          {"needed": needed}))
+                          {"needed": needed or bool(removals)}))
+    actions += removals
     return Plan(actions=actions, matches=matches, extras=extras, errors=errors)
 
 

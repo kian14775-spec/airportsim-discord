@@ -127,6 +127,14 @@ class DiscordBackend:
                 kw["available_tags"] = [keep.get(n) or discord.ForumTag(name=n) for n in v]
         await ch.edit(reason=self.reason, **kw)
 
+    async def delete_category(self, category_id) -> None:
+        live = await self.guild.fetch_channels()   # fresh from Discord, not the cache
+        if any(getattr(c, "category_id", None) == category_id for c in live):
+            raise RuntimeError(f"section {category_id} still has channels, not removing it")
+        cat = next((c for c in live if c.id == category_id), None)
+        if isinstance(cat, discord.CategoryChannel):
+            await cat.delete(reason=self.reason)
+
     async def reorder(self, order) -> None:
         # Discord only allows one parent change per bulk call, so move strays one by one first
         for i, _, parent in order:

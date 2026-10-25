@@ -17,6 +17,7 @@ class Backend(Protocol):
     async def create_channel(self, spec, parent_id: int, overwrites: dict[int, tuple[int, int]]) -> int: ...
     async def edit_channel(self, channel_id: int, ctype: str, fields: dict) -> None: ...
     async def reorder(self, order: list[tuple[int, int, int | None]]) -> None: ...
+    async def delete_category(self, category_id: int) -> None: ...
 
 
 async def execute(plan: Plan, layout: Layout, backend: Backend, state: dict[str, int],
@@ -67,6 +68,9 @@ async def execute(plan: Plan, layout: Layout, backend: Backend, state: dict[str,
             for cid in a.data["ids"]:
                 await backend.edit_channel(cid, "archive", {"parent": ids[cat_ref(ARCHIVE_KEY)],
                                                             "overwrites": hidden})
+        elif a.op == "remove_category":
+            await backend.delete_category(a.data["id"])
+            ids.pop(a.key, None)
         elif a.op == "reorder":
             order = desired_order(layout, ids)
             if cat_ref(ARCHIVE_KEY) in ids:
