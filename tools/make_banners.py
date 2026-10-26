@@ -18,12 +18,12 @@ SUB_FONT = "C:/Windows/Fonts/segoeuib.ttf"
 BANNERS = {
     "welcome":  ("Welcome", "Airport Simulator", (52, 86, 158), "shot2.jpg", 0.45),
     "rules":    ("Rules", "Read before you verify", (150, 58, 64), "shot4.jpg", 0.40),
-    "support":  ("Support", "We're here to help", (38, 122, 112), "shot6.jpg", 0.55),
-    "help":     ("Help", "Everything in one place", (52, 86, 158), "shot5.jpg", 0.35),
-    "stats":    ("Stats", "Live numbers and daily reports", (58, 66, 84), "shot1.jpg", 0.30),
-    "liveries": ("Liveries", "Templates and showcase", (168, 118, 46), "shot4.jpg", 0.70),
-    "contest":  ("Contest", "Livery of the Month", (168, 118, 46), "shot5.jpg", 0.55),
-    "inbox":    ("Inbox", "Every open ticket", (58, 66, 84), "shot6.jpg", 0.40),
+    "support":   ("Support", "We're here to help", (38, 122, 112), "int2.jpg", 0.55),
+    "help":      ("Help", "Everything in one place", (52, 86, 158), "shot5.jpg", 0.35),
+    "stats":     ("Stats", "Live numbers and daily reports", (58, 66, 84), "play7.jpg", 0.5),
+    "liveries":  ("Liveries", "Templates and showcase", (168, 118, 46), "gc_loader.jpg", 0.7),
+    "contest":   ("Contest", "Livery of the Month", (168, 118, 46), "play4.jpg", 0.4),
+    "inbox":     ("Inbox", "Every open ticket", (58, 66, 84), "gc_norwegian.jpg", 0.6),
 }
 
 

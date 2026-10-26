@@ -7,3 +7,6 @@
 *.key
 __pycache__/
 .git/
+/assets/shots/
+/tools/
+/tests/

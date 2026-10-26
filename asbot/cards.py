@@ -14,6 +14,8 @@ Banners are PNGs in assets/banners, sent as attachments with the message (attach
 from __future__ import annotations
 
 
+import hashlib
+
 import discord
 
 from . import db
@@ -71,6 +73,16 @@ class CardView(discord.ui.LayoutView):
             self.add_item(c)
 
 
+def banners_hash(names) -> str:
+    """Changes when any banner image changes, so cards re-upload new artwork by themselves."""
+    h = hashlib.md5()
+    for n in names:
+        p = BANNERS / f"{n}.png"
+        if p.exists():
+            h.update(p.read_bytes())
+    return h.hexdigest()
+
+
 def files_for(*names: str) -> list[discord.File]:
     return [f for f in (banner_file(n) for n in names if n) if f]
 
@@ -86,7 +98,12 @@ async def post_card(name: str, channel, view: discord.ui.LayoutView, banners: tu
         try:
             msg = await channel.fetch_message(row_["message_id"])
             if msg.flags.components_v2:
-                await msg.edit(view=view)
+                key, now = f"card_art:{name}", banners_hash(banners)
+                if banners and db.kv_get(key) != now:      # new banner artwork: swap the attachments
+                    await msg.edit(view=view, attachments=files_for(*banners))
+                    db.kv_set(key, now)
+                else:
+                    await msg.edit(view=view)
                 return msg
             if msg.author.id == channel.guild.me.id:
                 await msg.delete()            # the old embed version of this panel (the bot's own post)
@@ -94,6 +111,7 @@ async def post_card(name: str, channel, view: discord.ui.LayoutView, banners: tu
             pass
     msg = await channel.send(view=view, files=files_for(*banners), allowed_mentions=discord.AllowedMentions.none())
     db.set_panel(name, channel.id, msg.id)
+    db.kv_set(f"card_art:{name}", banners_hash(banners))
     return msg
 
 
@@ -114,7 +132,12 @@ async def forum_card(key: str, forum: discord.ForumChannel, name: str, view: dis
         try:
             starter = await thread.fetch_message(thread.id)
             if starter.flags.components_v2:
-                await starter.edit(view=view)
+                art, now = f"card_art:{key}", banners_hash(banners)
+                if banners and db.kv_get(art) != now:
+                    await starter.edit(view=view, attachments=files_for(*banners))
+                    db.kv_set(art, now)
+                else:
+                    await starter.edit(view=view)
                 return thread
             if thread.owner_id == forum.guild.me.id:
                 await thread.delete()          # old plain version, the bot's own post
@@ -123,6 +146,7 @@ async def forum_card(key: str, forum: discord.ForumChannel, name: str, view: dis
             return thread
     made = await forum.create_thread(name=name, view=view, files=files_for(*banners), applied_tags=tags or [])
     db.kv_set(key, made.thread.id)
+    db.kv_set(f"card_art:{key}", banners_hash(banners))
     if pin or lock:
         try:
             await made.thread.edit(pinned=pin, locked=lock)
