@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import db, opencloud
+from .. import cards, db, opencloud, ui
 from ..paths import DATA
 from ..core import cfg, channel, embed, is_staff, log, log_staff, role, staff_only
 
@@ -163,31 +163,16 @@ class Community(commands.Cog):
             return
         files = template_files()
         names = "\n".join(f"• `{p.stem}`" for p in files) or "Templates are being added. Check back soon."
-        text = ("**Livery templates**\nDownload a template, paint it, then post your livery here with the "
-                "**Showcase** tag. Use `/template` anywhere to get one sent to you.\n\n" + names)
-        tid = db.kv_get("templates_thread")
-        thread = self.guild.get_thread(tid) if tid else None
-        if thread is None and tid:
-            try:
-                thread = await self.bot.fetch_channel(tid)
-            except discord.HTTPException:
-                thread = None
-        if thread is None:
-            tags = [t for t in forum.available_tags if t.name == "Template"]
-            made = await forum.create_thread(name="Templates", content=text, applied_tags=tags)
-            thread = made.thread
-            db.kv_set("templates_thread", thread.id)
-            try:
-                await thread.edit(pinned=True, locked=True)
-            except discord.HTTPException as e:
-                log.warning("templates post pin/lock: %s", e)
-        else:
-            try:
-                starter = await thread.fetch_message(thread.id)
-                if starter.content != text:
-                    await starter.edit(content=text)
-            except discord.HTTPException as e:
-                log.warning("templates post edit: %s", e)
+        view = cards.CardView(cards.container(
+            cards.title("Livery templates", "Paint your own livery and show it off here."),
+            cards.divider(),
+            cards.section("How to", "**1.** Get a template with `/help` → Livery templates\n"
+                                    "**2.** Paint it\n**3.** Post it here with the **Showcase** tag and a picture"),
+            cards.section("Available", names),
+            cards.small("Best livery each month can win Livery of the Month and get added to the game."),
+            accent=ui.WAIT, banner_name="liveries"))
+        tags = [t for t in forum.available_tags if t.name == "Template"]
+        await cards.forum_card("templates_thread", forum, "📌 Livery templates", view, banners=("liveries",), tags=tags)
 
     async def send_template(self, interaction: discord.Interaction, aircraft: str):
         match = next((p for p in template_files() if p.stem.lower() == aircraft.lower()), None)

@@ -88,14 +88,13 @@ async def run(client: discord.Client):
     if unverified:
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
-    for key, embeds_wanted in (("welcome", 1), ("support", 1)):
+    for key in ("welcome", "support", "stats"):
         found = None
         async for m in ch(key).history(limit=25):
-            if m.author.id == g.me.id and m.components:
+            if m.author.id == g.me.id and m.flags.components_v2:
                 found = m
                 break
-        check(found is not None and len(found.embeds) >= embeds_wanted,
-              f"{key} panel posted")
+        check(found is not None, f"{key} card posted (new layout)")
 
     inbox = ch("inbox")
     pinned = [t for t in inbox.threads if t.flags.pinned]

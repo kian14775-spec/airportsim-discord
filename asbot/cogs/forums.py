@@ -16,7 +16,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import db
+from .. import cards, db, ui
 from ..core import channel, embed, log
 from ..renamer import rename_soon
 from .community import UPVOTE, star
@@ -267,21 +267,16 @@ class Forums(commands.Cog):
                     n = sum(max(0, r.count - (1 if r.me else 0)) for r in msg.reactions if str(r.emoji) == star())
                     scores.append((n, th))
         scores.sort(key=lambda x: -x[0])
-        text = ("**Livery of the Month: live top 5**\nVote with " + star() + " on your favourite Showcase posts.\n\n" +
-                ("\n".join(f"**{i}.** {th.mention} · {n} {star()}" for i, (n, th) in enumerate(scores[:5], 1))
-                 or "No entries yet. Post yours with the Showcase tag!"))
-        tid = db.kv_get("contest_board")
-        th = self.guild.get_thread(tid) if tid else None
+        top = "\n".join(f"**{i}.** {th.mention} · {n} {star()}" for i, (n, th) in enumerate(scores[:5], 1))
+        view = cards.CardView(cards.container(
+            cards.title("Livery of the Month", f"Vote with {star()} on your favourite Showcase posts."),
+            cards.divider(),
+            cards.section("Live top 5", top or "No entries yet. Post yours with the **Showcase** tag!"),
+            cards.small(f"Updates every hour · last update <t:{int(db.now())}:R>"),
+            accent=ui.WAIT, banner_name="contest"))
         try:
-            if th is None:
-                made = await forum.create_thread(name="🏆 Livery of the Month: live top 5", content=text,
-                                                 applied_tags=tags(forum, "Showcase"))
-                db.kv_set("contest_board", made.thread.id)
-                await made.thread.edit(pinned=True, locked=True)
-            else:
-                msg = await starter_of(th)
-                if msg and msg.content != text:
-                    await msg.edit(content=text)
+            await cards.forum_card("contest_board", forum, "🏆 Livery of the Month", view, banners=("contest",),
+                                   tags=tags(forum, "Showcase"))
         except discord.HTTPException as e:
             log.warning("contest board: %s", e)
 

@@ -95,3 +95,37 @@ async def post_card(name: str, channel, view: discord.ui.LayoutView, banners: tu
     msg = await channel.send(view=view, files=files_for(*banners), allowed_mentions=discord.AllowedMentions.none())
     db.set_panel(name, channel.id, msg.id)
     return msg
+
+
+async def forum_card(key: str, forum: discord.ForumChannel, name: str, view: discord.ui.LayoutView,
+                     banners: tuple[str, ...] = (), tags=None, pin: bool = True, lock: bool = True):
+    """Keep one bot-owned forum post (guide, templates, board) as a card. An older plain post with the
+    same job is replaced, since a post can't switch to the new layout by editing."""
+    tid = db.kv_get(key)
+    thread = None
+    if tid:
+        thread = forum.guild.get_thread(tid)
+        if thread is None:
+            try:
+                thread = await forum.guild.fetch_channel(tid)
+            except discord.HTTPException:
+                thread = None
+    if thread is not None:
+        try:
+            starter = await thread.fetch_message(thread.id)
+            if starter.flags.components_v2:
+                await starter.edit(view=view)
+                return thread
+            if thread.owner_id == forum.guild.me.id:
+                await thread.delete()          # old plain version, the bot's own post
+        except discord.HTTPException as e:
+            log.warning("forum card %s: %s", key, e)
+            return thread
+    made = await forum.create_thread(name=name, view=view, files=files_for(*banners), applied_tags=tags or [])
+    db.kv_set(key, made.thread.id)
+    if pin or lock:
+        try:
+            await made.thread.edit(pinned=pin, locked=lock)
+        except discord.HTTPException as e:
+            log.warning("forum card pin %s: %s", key, e)
+    return made.thread

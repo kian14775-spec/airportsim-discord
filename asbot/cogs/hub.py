@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import db, ui
+from .. import cards, db, ui
 from ..core import staff_only
 from .community import template_files
 from .forums import FeedbackModal, RpModal
@@ -25,47 +25,55 @@ def _private(view_items) -> discord.ui.View:
     return v
 
 
+class Do(discord.ui.Button):
+    """A button whose click runs `fn(interaction)` (for short-lived private panels)."""
+
+    def __init__(self, label: str, fn, style=discord.ButtonStyle.secondary):
+        super().__init__(label=label, style=style)
+        self.fn = fn
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.fn(interaction)
+
+
 # ---------------- members: /help ----------------
-class HelpView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=900)
+async def _roles(interaction: discord.Interaction):
+    items = [RoleGroupSelect(g) for g, (key, _, _) in ROLE_GROUPS.items()]
+    await interaction.response.send_message("Pick what pings you and what you play on:",
+                                            view=_private(items), ephemeral=True)
 
-    @discord.ui.button(label="Verify", style=discord.ButtonStyle.success, row=0)
-    async def verify(self, interaction: discord.Interaction, _):
-        await start_verify(interaction)
 
-    @discord.ui.button(label="My roles", style=discord.ButtonStyle.secondary, row=0)
-    async def roles(self, interaction: discord.Interaction, _):
-        items = [RoleGroupSelect(g) for g, (key, _, _) in ROLE_GROUPS.items()]
-        await interaction.response.send_message("Pick what pings you and what you play on:",
-                                                view=_private(items), ephemeral=True)
+async def _support(interaction: discord.Interaction):
+    await interaction.response.send_message("What do you need help with?",
+                                            view=_private([TopicSelect(), AppealButton()]), ephemeral=True)
 
-    @discord.ui.button(label="Get support", style=discord.ButtonStyle.primary, row=0)
-    async def support(self, interaction: discord.Interaction, _):
-        await interaction.response.send_message("What do you need help with?",
-                                                view=_private([TopicSelect(), AppealButton()]), ephemeral=True)
 
-    @discord.ui.button(label="Suggest an idea", style=discord.ButtonStyle.secondary, row=1)
-    async def suggest(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(FeedbackModal("Suggestion"))
+async def _airline(interaction: discord.Interaction):
+    await interaction.response.send_message("What kind of server is it?", view=_private([AirlineKind()]),
+                                            ephemeral=True)
 
-    @discord.ui.button(label="Report a bug", style=discord.ButtonStyle.secondary, row=1)
-    async def bug(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(FeedbackModal("Bug"))
 
-    @discord.ui.button(label="My airline post", style=discord.ButtonStyle.secondary, row=1)
-    async def airline(self, interaction: discord.Interaction, _):
-        await interaction.response.send_message("What kind of server is it?", view=_private([AirlineKind()]),
-                                                ephemeral=True)
+async def _templates(interaction: discord.Interaction):
+    files = template_files()
+    if not files:
+        return await interaction.response.send_message("Templates are being added. Check back soon.", ephemeral=True)
+    await interaction.response.send_message("Which aircraft?", view=_private([TemplatePick(files)]), ephemeral=True)
 
-    @discord.ui.button(label="Livery templates", style=discord.ButtonStyle.secondary, row=1)
-    async def templates(self, interaction: discord.Interaction, _):
-        files = template_files()
-        if not files:
-            return await interaction.response.send_message("Templates are being added. Check back soon.",
-                                                           ephemeral=True)
-        await interaction.response.send_message("Which aircraft?", view=_private([TemplatePick(files)]),
-                                                ephemeral=True)
+
+def help_card() -> cards.CardView:
+    return cards.CardView(cards.container(
+        cards.title("How can we help?", "Everything you can do here, in one place. Only you can see this."),
+        cards.divider(),
+        cards.section("Your account", "**Verify** your Roblox account and set **your roles**."),
+        cards.row(Do("Verify", start_verify, discord.ButtonStyle.success), Do("My roles", _roles),
+                  Do("Get support", _support, discord.ButtonStyle.primary)),
+        cards.divider(),
+        cards.section("The game", "Share an **idea**, report a **bug**, post **your airline** or grab a "
+                                  "**livery template**."),
+        cards.row(Do("Suggest an idea", lambda i: i.response.send_modal(FeedbackModal("Suggestion"))),
+                  Do("Report a bug", lambda i: i.response.send_modal(FeedbackModal("Bug"))),
+                  Do("My airline post", _airline), Do("Livery templates", _templates)),
+        accent=ui.BRAND, banner_name="help"), timeout=900)
 
 
 class AppealButton(discord.ui.Button):
@@ -130,7 +138,7 @@ class StaffMenu(discord.ui.Select):
         if act == "member":
             return await interaction.response.send_message("Who?", view=_private([MemberPick()]), ephemeral=True)
         if act == "today":
-            return await interaction.response.send_message(embed=await bot.get_cog("Stats").so_far(), ephemeral=True)
+            return await interaction.response.send_message(view=await bot.get_cog("Stats").so_far(), ephemeral=True)
         if act == "warn":
             return await interaction.response.send_message("Who?", view=_private([WarnPick()]), ephemeral=True)
         if act == "answers":
@@ -269,18 +277,18 @@ class Hub(commands.Cog):
 
     @app_commands.command(description="Everything you can do here, in one place")
     async def help(self, interaction: discord.Interaction):
-        e = ui.card("How can we help?",
-                    "**Verify** your Roblox account · set **your roles** · **get support** from the team\n"
-                    "**Suggest** ideas or **report bugs** · post **your airline** · grab **livery templates**",
-                    tone="brand")
-        await interaction.response.send_message(embed=e, view=HelpView(), ephemeral=True)
+        await interaction.response.send_message(view=help_card(), files=cards.files_for("help"), ephemeral=True)
 
     @app_commands.command(description="Staff tools")
     @app_commands.default_permissions(moderate_members=True)
     @staff_only()
     async def staff(self, interaction: discord.Interaction):
-        e = ui.card("Staff tools", "Pick what you want to do. Everything here only shows to you.", tone="brand")
-        await interaction.response.send_message(embed=e, view=_private([StaffMenu()]), ephemeral=True)
+        view = cards.CardView(cards.container(
+            cards.title("Staff tools", "Pick what you want to do. Everything here only shows to you."),
+            cards.divider(),
+            cards.text("\n".join(f"**{label}** · {desc}" for _, label, desc in ACTIONS)),
+            cards.row(StaffMenu()), accent=ui.NEUTRAL), timeout=600)
+        await interaction.response.send_message(view=view, ephemeral=True)
 
 
 async def setup(bot):

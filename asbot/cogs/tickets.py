@@ -552,32 +552,21 @@ class Tickets(commands.Cog):
         inbox = channel(self.guild, "inbox")
         if not isinstance(inbox, discord.ForumChannel):
             return
-        text = ("**How the inbox works**\n"
-                "• Every post is one open ticket. Members talk to the bot in their DMs; you just type in the post.\n"
-                "• Start a message with `//` for a staff-only note the member never sees.\n"
-                "• Title dots: 🟢 new · 🔵 claimed · 🟡 waiting on member · 🔴 urgent.\n"
-                "• Buttons: Claim, Send to dev team, Ask to close (the member confirms), Close now, priority.\n"
-                "• `/reply` sends a saved reply. `/ticket_stats` shows this month's numbers.\n"
-                "• Nobody answers in 30 min: Support Team gets one ping. Member silent 48 h: auto-close.\n"
-                "• Closing stores the chat and removes the post. Read old tickets with the View transcript "
-                "button in the Tickets log, Past tickets on a new ticket, or /ticket view · history · search.")
-        tid = db.kv_get("inbox_guide")
-        th = await self.fetch_thread(tid)
-        if th is None:
-            made = await inbox.create_thread(name="📌 How the inbox works", content=text)
-            th = made.thread
-            db.kv_set("inbox_guide", th.id)
-            try:
-                await th.edit(pinned=True, locked=True)
-            except discord.HTTPException as e:
-                log.warning("inbox guide pin: %s", e)
-        else:
-            try:
-                starter = await th.fetch_message(th.id)
-                if starter.content != text:
-                    await starter.edit(content=text)
-            except discord.HTTPException:
-                pass
+        view = cards.CardView(cards.container(
+            cards.title("How the inbox works", "Every post here is one open ticket. Members talk to the bot in "
+                                               "their DMs; you just type in the post."),
+            cards.divider(),
+            cards.section("Replying", "Type in the post and it reaches the member. Start with `//` for a staff-only "
+                                      "note. Right-click a good reply → Apps → **Save as instant answer**."),
+            cards.section("Title dots", "🟢 new · 🔵 claimed · 🟡 waiting on member · ⏳ asked to close · 🔴 urgent"),
+            cards.section("Buttons", "**Claim** · **Send to dev team** · **Ask to close** (the member confirms) · "
+                                     "**Close now** · priority menu"),
+            cards.section("Timers", "No reply in 30 min: Support Team gets one ping. Member silent 48 h: auto-close."),
+            cards.section("Old tickets", "Closing stores the chat and removes the post. Read them with **View "
+                                         "transcript** in the Tickets log, **Past tickets** on a new ticket, or "
+                                         "`/ticket view` · `history` · `search`."),
+            accent=ui.NEUTRAL, banner_name="inbox"))
+        await cards.forum_card("inbox_guide", inbox, "📌 How the inbox works", view, banners=("inbox",))
 
     def blocked_reason(self, user) -> str | None:
         member = self.guild.get_member(user.id)
@@ -602,12 +591,16 @@ class Tickets(commands.Cog):
                      user.id, topic_key, now, now)
         label = topic_label(topic_key)
         pos, eta = queue_position(tid), eta_minutes()
-        hello = embed(f"Ticket {tid:04d} opened · {label}",
-                      f"Thanks, the team has your message. You're **#{pos} in line**, usual first reply "
-                      f"**~{eta} min**.\n\nReply here to add details or screenshots. Everything you send in this "
-                      "DM goes to the team.")
+        hello = cards.CardView(cards.container(
+            cards.title(f"Ticket {tid:04d} · {label}", "Thanks, the team has your message."),
+            cards.divider(),
+            cards.text(ui.kv(("Your place", f"#{pos} in line"), ("Usual first reply", f"~{eta} min"))),
+            cards.section("What now?", "Reply right here to add details or screenshots. Everything you send in "
+                                       "this DM goes to the team, and their answers arrive here too."),
+            cards.row(TicketButton("uclose", tid)),
+            accent=ui.BRAND, banner_name="support"))
         try:
-            await user.send(embed=hello, view=user_view(tid))
+            await user.send(view=hello, files=cards.files_for("support"))
         except discord.Forbidden:
             db.run("DELETE FROM tickets WHERE id=?", tid)
             return await interaction.followup.send(

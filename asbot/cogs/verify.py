@@ -91,12 +91,15 @@ async def welcome_dm(member: discord.Member) -> None:
     spots = [(k, label) for k, label in (("welcome", "pick your pings"), ("support", "get help"),
                                           ("chat", "say hi"), ("rp_servers", "find a player airline"))
              if channel(g, k)]
-    lines = [f"{channel(g, k).mention}: {label}" for k, label in spots]
-    e = embed(f"Welcome to {game['name']}, {member.display_name}!",
-              "You're all set. A few places to start:\n" + "\n".join(lines) +
-              f"\n\n[Play the game]({game['link']})")
+    lines = [f"{channel(g, k).mention} · {label}" for k, label in spots]
+    view = cards.CardView(cards.container(
+        cards.title(f"Welcome, {member.display_name}!", "You're verified and all set."),
+        cards.divider(),
+        cards.section("A few places to start", "\n".join(lines)),
+        cards.row(discord.ui.Button(label="Play the game", url=game["link"])),
+        accent=ui.BRAND, banner_name="welcome"))
     try:
-        await member.send(embed=e)
+        await member.send(view=view, files=cards.files_for("welcome"))
     except discord.HTTPException:
         pass
 

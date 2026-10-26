@@ -10,9 +10,9 @@ import datetime as dt
 import discord
 from discord.ext import commands, tasks
 
-from .. import db, ui
+from .. import cards, db, ui
 from ..core import cfg, channel, game_stats, game_votes, group_info, log
-from ..panels import drop_panel, ensure_panel
+from ..panels import drop_panel
 
 
 def today() -> dt.date:
@@ -76,11 +76,13 @@ def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> di
                           ("Still open", str(t["open_now"])),
                           ("First reply", f"{t['first_reply_min']} min" if t["first_reply_min"] is not None else "-"),
                           ("Rating", t["rating"]), ("Applications", str(t["apps"])))
-    e = ui.card(title, None, tone="brand", fields=[("Discord", discord_block, True), ("Roblox", roblox_block, True),
-                                                   ("Support", support_block, True)])
+    parts = [cards.title(title), cards.divider(),
+             cards.section("Discord", discord_block), cards.divider(),
+             cards.section("Roblox", roblox_block), cards.divider(),
+             cards.section("Support", support_block)]
     if not start:
-        e.set_footer(text="First day: Roblox gains start counting from tomorrow")
-    return e
+        parts.append(cards.small("First day: Roblox gains start counting from tomorrow"))
+    return cards.CardView(cards.container(*parts, accent=ui.BRAND), timeout=600 if partial else None)
 
 
 class Stats(commands.Cog):
@@ -106,7 +108,7 @@ class Stats(commands.Cog):
         k = f"leaves:{today():%Y-%m-%d}"
         db.kv_set(k, db.kv_get(k, 0) + 1)
 
-    async def so_far(self) -> discord.Embed:
+    async def so_far(self) -> cards.CardView:
         d = today()
         return report_card(d, db.kv_get(f"snap:{d:%Y-%m-%d}", {}), await snapshot(self.guild), partial=True)
 
@@ -123,7 +125,7 @@ class Stats(commands.Cog):
             db.kv_set(f"snap:{key}", snap)
             if not db.kv_get(f"reported:{ykey}") and db.kv_get(f"snap:{ykey}") is not None:
                 try:
-                    await out.send(embed=report_card(d - dt.timedelta(days=1), db.kv_get(f"snap:{ykey}", {}), snap))
+                    await out.send(view=report_card(d - dt.timedelta(days=1), db.kv_get(f"snap:{ykey}", {}), snap))
                 except discord.HTTPException as e:
                     log.warning("daily report: %s", e)
                 db.kv_set(f"reported:{ykey}", True)
@@ -139,21 +141,27 @@ class Stats(commands.Cog):
         urgent = q("SELECT COUNT(*) n FROM tickets WHERE status!='closed' AND priority='urgent'")
         apps = q("SELECT COUNT(*) n FROM applications WHERE status='pending'")
         key = f"{today():%Y-%m-%d}"
-        tone = "bad" if urgent else ("wait" if need else "good")
+        accent = ui.BAD if urgent else (ui.WAIT if need else ui.GOOD)
         inbox = channel(self.guild, "inbox")
         tickets_line = f"{open_n} open" + (f" · **{need} need a reply**" if need else " · all answered")
-        e = ui.card("Right now", ui.kv(
-            ("Tickets", tickets_line + (f" · 🔴 {urgent} urgent" if urgent else "")),
-            ("Applications waiting", str(apps)),
-            ("In game", f"{snap.get('playing') or 0:,} playing · peak today {db.kv_get(f'peak:{key}', 0):,}"),
-            ("Today", f"{db.kv_get(f'joins:{key}', 0)} joined · {db.kv_get(f'leaves:{key}', 0)} left"),
-            ("Totals", f"{snap.get('members', 0):,} members · {snap.get('group') or 0:,} in group · "
-                       f"{snap.get('visits') or 0:,} visits")), tone=tone)
-        if inbox:
-            e.add_field(name="​", value=f"[Open the inbox]({inbox.jump_url}) · daily report posts at midnight UTC",
-                        inline=False)
-        e.timestamp = discord.utils.utcnow()
-        await ensure_panel("staff_summary", out, embeds=[e], pin=True)
+        if urgent:
+            tickets_line += f" · 🔴 {urgent} urgent"
+        body = ui.kv(("Tickets", tickets_line), ("Applications waiting", str(apps)),
+                     ("In game", f"{snap.get('playing') or 0:,} playing · peak today {db.kv_get(f'peak:{key}', 0):,}"),
+                     ("Today", f"{db.kv_get(f'joins:{key}', 0)} joined · {db.kv_get(f'leaves:{key}', 0)} left"))
+        totals = ui.kv(("Members", f"{snap.get('members', 0):,}"), ("Roblox group", f"{snap.get('group') or 0:,}"),
+                       ("Visits", f"{snap.get('visits') or 0:,}"))
+        view = cards.CardView(cards.container(
+            cards.title("Right now"), cards.text(body), cards.divider(), cards.section("Totals", totals),
+            cards.row(discord.ui.Button(label="Open the inbox", url=inbox.jump_url)) if inbox else None,
+            cards.small(f"Updated <t:{int(db.now())}:R> · daily report posts at midnight UTC"),
+            accent=accent, banner_name="stats"))
+        msg = await cards.post_card("staff_summary", out, view, banners=("stats",))
+        if msg and not msg.pinned:
+            try:
+                await msg.pin()
+            except discord.HTTPException:
+                pass
 
     @tick.before_loop
     async def _ready(self):
