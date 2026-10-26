@@ -83,7 +83,6 @@ def make(name, title, sub, colour, shot, focus):
     d.text((tx, ty), title, font=font, fill=(255, 255, 255))
     sub_y = ty + box[3] + gap
     d.text((tx + 3, sub_y), sub.upper(), font=sub_font, fill=(232, 238, 247))
-    d.rounded_rectangle([tx + 4, sub_y + sub_h + 14, tx + 58, sub_y + sub_h + 18], 2, fill=(255, 255, 255))
 
     # rounded corners like Discord shows them
     radius = 22
