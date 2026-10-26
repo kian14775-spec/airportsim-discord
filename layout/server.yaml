@@ -21,16 +21,17 @@ roles:  # top to bottom. Existing roles are only referenced (name only = the bot
   - {key: moderator,    name: Server Moderator}
   - {key: trial_mod,    name: Trial Moderator}
   - {key: support_team, name: Support Team}
-  - {key: verified,     name: Traveler}          # given on verify (Bloxlink or the bot)
-  - {key: ping_announcements, name: "| Announcements |"}
-  - {key: ping_devlogs,       name: "| Development |"}
-  - {key: ping_socials,       name: "| Social Media |"}
-  - {key: ping_polls,         name: "| Polls |"}
+  # (live order 2026-10-26: Admin sits under Co Owner; teams + perks sit here, between staff and Traveler)
   - {key: livery_winner,      name: Livery of the Month, color: "#F1C40F"}
+  - {key: verified,     name: Traveler}          # given on verify (Bloxlink or the bot)
   - {key: plat_pc,      name: PC}
   - {key: plat_mobile,  name: Mobile}
   - {key: plat_console, name: Console}
   - {key: plat_vr,      name: VR}
+  - {key: ping_announcements, name: "| Announcements |"}
+  - {key: ping_devlogs,       name: "| Development |"}
+  - {key: ping_socials,       name: "| Social Media |"}
+  - {key: ping_polls,         name: "| Polls |"}
 
 # Role groups usable in presets like a single role.
 groups:
