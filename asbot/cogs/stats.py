@@ -60,9 +60,11 @@ def ticket_numbers(d: dt.date) -> dict:
     }
 
 
-def stat_line(*pairs: tuple[str, str]) -> str:
-    """'**64** playing  ·  **86** peak today': the number first and bold, so it reads at a glance."""
-    return "  ·  ".join(f"**{v}** {k}" for k, v in pairs)
+def table(*rows: list[tuple[str, object]]) -> str:
+    """Small aligned table in a code block: labels left, numbers right, two per row.
+    Narrow enough (41 chars) to fit on a phone without scrolling."""
+    lines = ["   ".join(f"{label:<11}{str(value):>8}" for label, value in row).rstrip() for row in rows]
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> cards.CardView:
@@ -71,20 +73,21 @@ def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> ca
     joins, leaves = db.kv_get(f"joins:{key}", 0), db.kv_get(f"leaves:{key}", 0)
     t = ticket_numbers(d)
     title = f"{'Today so far' if partial else 'Daily report'} · {d:%a %d %b}"
-    discord_block = stat_line(("net", signed(joins - leaves)), ("joined", f"{joins}"), ("left", f"{leaves}"),
-                              ("verified", str(t["verified"]))) + f"\n-# {end.get('members', 0):,} members in total"
-    roblox_block = stat_line(("visits", signed(diff("visits"))), ("group members", signed(diff("group"))),
-                             ("favourites", signed(diff("favorites")))) + "\n" + stat_line(
-        ("peak players", f"{db.kv_get(f'peak:{key}', 0):,}"),
-        ("likes", f"{end['likes']}%" if end.get("likes") is not None else "-"))
-    support_block = stat_line(("opened", str(t["opened"])), ("handled", str(t["closed"])),
-                              ("still open", str(t["open_now"]))) + "\n" + stat_line(
-        ("first reply", f"{t['first_reply_min']} min" if t["first_reply_min"] is not None else "-"),
-        ("rating", t["rating"]), ("applications", str(t["apps"])))
-    parts = [cards.title(title), cards.divider(),
-             cards.section("👥 Discord", discord_block),
-             cards.section("✈️ Roblox", roblox_block),
-             cards.section("🎫 Support", support_block)]
+    first = f"{t['first_reply_min']} min" if t["first_reply_min"] is not None else "-"
+    rating = t["rating"].split(" ")[0] if t["rating"] != "no ratings" else "-"
+    parts = [
+        cards.title(title),
+        cards.section("Discord", table([("Joined", joins), ("Left", leaves)],
+                                       [("Net", signed(joins - leaves)), ("Verified", t["verified"])],
+                                       [("Members", f"{end.get('members', 0):,}")])),
+        cards.section("Roblox", table([("Visits", signed(diff("visits"))), ("Group", signed(diff("group")))],
+                                      [("Favourites", signed(diff("favorites"))),
+                                       ("Likes", f"{end['likes']}%" if end.get("likes") is not None else "-")],
+                                      [("Peak", f"{db.kv_get(f'peak:{key}', 0):,}")])),
+        cards.section("Support", table([("Opened", t["opened"]), ("Handled", t["closed"])],
+                                       [("Still open", t["open_now"]), ("Rating", rating)],
+                                       [("1st reply", first), ("Apps", t["apps"])])),
+    ]
     if not start:
         parts.append(cards.small("First day: Roblox gains start counting from tomorrow"))
     return cards.CardView(cards.container(*parts, accent=ui.BRAND), timeout=600 if partial else None)
@@ -151,12 +154,12 @@ class Stats(commands.Cog):
         verified = db.one("SELECT COUNT(*) n FROM links WHERE linked_at>=?", day_bounds(today())[0])["n"]
         view = cards.CardView(cards.container(
             cards.title("Right now"),
-            cards.section("🎫 Tickets", stat_line(("open", str(open_n)), ("need a reply", str(need)),
-                                                 ("urgent", str(urgent))) + f"\n-# {apps} application(s) waiting"),
-            cards.section("✈️ In game", stat_line(("playing", f"{snap.get('playing') or 0:,}"),
-                                                 ("peak today", f"{db.kv_get(f'peak:{key}', 0):,}"))),
-            cards.section("👋 Today", stat_line(("joined", str(db.kv_get(f"joins:{key}", 0))),
-                                               ("left", str(db.kv_get(f"leaves:{key}", 0))), ("verified", str(verified)))),
+            cards.section("Tickets", table([("Open", open_n), ("Need reply", need)],
+                                           [("Urgent", urgent), ("Apps", apps)])),
+            cards.section("Game", table([("Playing", f"{snap.get('playing') or 0:,}"),
+                                         ("Peak today", f"{db.kv_get(f'peak:{key}', 0):,}")])),
+            cards.section("Today", table([("Joined", db.kv_get(f"joins:{key}", 0)),
+                                          ("Left", db.kv_get(f"leaves:{key}", 0))], [("Verified", verified)])),
             cards.divider(),
             cards.small(f"{snap.get('members', 0):,} members · {snap.get('group') or 0:,} in the Roblox group · "
                         f"{snap.get('visits') or 0:,} visits · updated <t:{int(db.now())}:R>"),
