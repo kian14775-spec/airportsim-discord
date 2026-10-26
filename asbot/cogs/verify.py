@@ -12,10 +12,10 @@ import random
 import discord
 from discord.ext import commands
 
-from .. import db, ui
+from .. import cards, db, ui
 from ..core import (cfg, channel, embed, log_staff, role, role_named, roblox_headshot,
                     roblox_user, roblox_user_by_name)
-from ..panels import drop_panel, ensure_panel
+from ..panels import drop_panel
 
 WORDS = ["runway", "taxi", "gate", "cabin", "jet", "tower", "cargo", "radar", "flaps", "pilot",
          "hangar", "apron", "boarding", "terminal", "jetway", "cockpit", "landing", "takeoff"]
@@ -139,33 +139,34 @@ async def start_verify(interaction: discord.Interaction):
     await interaction.response.send_modal(UsernameModal())
 
 
-class WelcomeView(discord.ui.View):
-    """The one message in rules-and-verify: Verify, help and links on top, role menus below."""
+class VerifyButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Verify", style=discord.ButtonStyle.success, custom_id="asbot:verify:start")
 
-    def __init__(self, guild: discord.Guild | None = None):
-        super().__init__(timeout=None)
-        sup = channel(guild, "support") if guild else None
-        if sup:
-            self.add_item(discord.ui.Button(label="Get help", url=sup.jump_url, row=0))
-        for label, url in (cfg()["welcome"].get("links") or {}).items():
-            self.add_item(discord.ui.Button(label=label, url=url, row=0))
-        for i, (group, (key, _, _)) in enumerate(ROLE_GROUPS.items(), start=1):
-            if cfg().get(key):
-                sel = RoleGroupSelect(group)
-                sel.row = i
-                self.add_item(sel)
-
-    @discord.ui.button(label="Verify", style=discord.ButtonStyle.success, custom_id="asbot:verify:start", row=0)
-    async def verify(self, interaction: discord.Interaction, _):
+    async def callback(self, interaction: discord.Interaction):
         await start_verify(interaction)
 
 
-def welcome_card() -> discord.Embed:
-    w = cfg()["welcome"]
-    rules = "\n".join(f"`{i}`  {r}" for i, r in enumerate(w["rules"], 1))
-    return ui.card(w["title"], f"{w['intro']}\n\n**Rules**\n{rules}\n\n"
-                               "**1.** Press **Verify** and link Roblox (under a minute)\n"
-                               "**2.** Pick your pings and platform below", tone="brand")
+class WelcomeCard(cards.CardView):
+    """rules-and-verify: Welcome, Rules and Get started cards in one message."""
+
+    def __init__(self, guild: discord.Guild | None = None):
+        w = cfg()["welcome"]
+        links = [discord.ui.Button(label=label, url=url) for label, url in (w.get("links") or {}).items()]
+        rules = "\n".join(f"**{i}.** {r}" for i, r in enumerate(w["rules"], 1))
+        sup = channel(guild, "support") if guild else None
+        start_row = [VerifyButton()] + ([discord.ui.Button(label="Get help", url=sup.jump_url)] if sup else [])
+        menus = [cards.row(RoleGroupSelect(g)) for g, (key, _, _) in ROLE_GROUPS.items() if cfg().get(key)]
+        super().__init__(
+            cards.container(cards.title(w["title"], w["intro"]), cards.row(*links) if links else None,
+                            accent=ui.BRAND, banner_name="welcome"),
+            cards.container(cards.text(rules), cards.divider(),
+                            cards.small("Breaking the rules can mean a strike, a timeout or a ban."),
+                            accent=ui.BAD, banner_name="rules"),
+            cards.container(cards.title("Get started"),
+                            cards.text("**1.** Press **Verify** and link your Roblox account (under a minute)\n"
+                                       "**2.** Pick what pings you and what you play on"),
+                            cards.row(*start_row), *menus, accent=ui.GOOD))
 
 
 class LinkAnywayView(discord.ui.View):
@@ -222,7 +223,7 @@ class RoleGroupSelect(discord.ui.Select):
 class Verify(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        bot.add_view(WelcomeView())
+        bot.add_view(WelcomeCard())
         bot.add_view(CheckView())
 
     @commands.Cog.listener()
@@ -230,7 +231,8 @@ class Verify(commands.Cog):
         guild = self.bot.get_guild(self.bot.guild_id)
         if guild is None:
             return
-        await ensure_panel("welcome", channel(guild, "welcome"), view=WelcomeView(guild), embeds=[welcome_card()])
+        await cards.post_card("welcome", channel(guild, "welcome"), WelcomeCard(guild),
+                              banners=("welcome", "rules"))
         await drop_panel(guild, "roles")   # roles used to be a second message; now part of the welcome one
 
     @commands.Cog.listener()

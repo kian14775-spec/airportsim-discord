@@ -6,7 +6,6 @@ from discord.ext import commands, tasks
 
 from .. import db
 from ..core import channel, embed, game_stats, log, log_staff, role
-from ..panels import ensure_panel
 from ..ui import BAD, BRAND, GOOD, WAIT
 
 STATES = {"ok": ("All systems normal", GOOD), "issues": ("Some issues right now", WAIT),
@@ -101,7 +100,8 @@ class News(commands.Cog):
 
     async def render_status(self):
         """One card in #support: a one-line game status, known issues if any, then how to get help."""
-        from .tickets import SupportView
+        from .. import cards
+        from .tickets import SupportCard
         s = status()
         name, colour = STATES.get(s["state"], STATES["ok"])
         dot = {"ok": "🟢", "issues": "🟡", "down": "🔴", "maintenance": "🔵"}.get(s["state"], "🟢")
@@ -111,13 +111,9 @@ class News(commands.Cog):
         bits.append(f"next update: {s.get('next_update') or 'not announced'}")
         body = "  ·  ".join(bits)
         if s["issues"]:
-            body += "\n\n**Known issues**\n" + "\n".join(f"• {i}" for i in s["issues"])
-        body += ("\n\n**Need help?** Pick a topic below. You'll often get an answer straight away; "
-                 "if not, a ticket opens and the team replies **in your DMs**.\n"
-                 "-# Make sure DMs from server members are on.")
-        e = embed("Support", body, colour=discord.Colour(colour))
-        e.timestamp = discord.utils.utcnow()
-        await ensure_panel("support", channel(self.guild, "support"), embeds=[e], view=SupportView())
+            body += "\n**Known issues:** " + " · ".join(s["issues"])
+        await cards.post_card("support", channel(self.guild, "support"), SupportCard(body, colour),
+                              banners=("support",))
         await self._drop_old_status_panel()
 
     async def _drop_old_status_panel(self):

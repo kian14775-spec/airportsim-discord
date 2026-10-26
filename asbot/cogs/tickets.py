@@ -24,7 +24,7 @@ from .. import db, opencloud
 from ..core import (cfg, channel, embed, is_staff, log, log_staff, role_named, roblox_group_rank,
                     roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
-from .. import faq, transcripts
+from .. import cards, faq, transcripts, ui
 
 NOTE_PREFIX = "//"
 from ..ui import BAD as RED, BRAND as BLUE, GOOD as GREEN, QUIET as GREY, WAIT as AMBER
@@ -444,29 +444,48 @@ class TopicSelect(discord.ui.Select):
         await interaction.response.send_modal(IssueModal(topics()[self.values[0]]))
 
 
-class SupportView(discord.ui.View):
+class AppealButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(TopicSelect())
+        super().__init__(label="Appeal a game ban", style=discord.ButtonStyle.secondary,
+                         custom_id="asbot:support:appeal")
 
-    @discord.ui.button(label="Appeal a game ban", style=discord.ButtonStyle.secondary,
-                       custom_id="asbot:support:appeal", row=1)
-    async def appeal(self, interaction: discord.Interaction, _):
+    async def callback(self, interaction: discord.Interaction):
         blocked = interaction.client.get_cog("Tickets").blocked_reason(interaction.user)
         if blocked:
             return await interaction.response.send_message(blocked, ephemeral=True)
         await interaction.response.send_modal(AppealModal())
 
-    @discord.ui.button(label="Apply for staff", style=discord.ButtonStyle.secondary,
-                       custom_id="asbot:support:apply", row=1)
-    async def apply(self, interaction: discord.Interaction, _):
+
+class ApplyButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Apply for staff", style=discord.ButtonStyle.secondary,
+                         custom_id="asbot:support:apply")
+
+    async def callback(self, interaction: discord.Interaction):
         await interaction.client.get_cog("Applications").start(interaction)
+
+
+class SupportCard(cards.CardView):
+    """#support: banner, live game status, the topics, then the menu and buttons, all in one card."""
+
+    def __init__(self, status_line: str = "", accent: int | None = None):
+        topic_lines = "\n".join(f"**{t['label']}** · {t.get('description', '')}" for t in cfg()["support"]["topics"])
+        super().__init__(cards.container(
+            cards.title("Support", status_line or None),
+            cards.divider(),
+            cards.section("How it works", "Pick a topic and describe the problem. You'll often get an answer "
+                                          "straight away; if not, a ticket opens and the team replies **in your DMs**."),
+            cards.text(topic_lines),
+            cards.row(TopicSelect()),
+            cards.row(AppealButton(), ApplyButton()),
+            cards.small("Make sure DMs from server members are on · please don't DM staff directly"),
+            accent=accent if accent is not None else ui.BRAND, banner_name="support"))
 
 
 class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        bot.add_view(SupportView())
+        bot.add_view(SupportCard())
         bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, transcripts.ViewButton,
                               transcripts.HistoryButton)
         self._dm_nag: dict[int, float] = {}
