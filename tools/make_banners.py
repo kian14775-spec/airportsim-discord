@@ -22,7 +22,7 @@ BANNERS = {
     "rules":    ("Rules", "Read before you verify", (150, 58, 64), "shot4.jpg", 0.40),
     "support":   ("Support", "We're here to help", (22, 25, 32, 180), "liv_southwest.jpg", 0.5, (0.36, 0.08, 1.0, 0.80)),
     "help":      ("Help", "Everything in one place", (52, 86, 158), "liv_klm.jpg", 0.5),
-    "stats":     ("Stats", "Live numbers and daily reports", (22, 25, 32, 180), "play3.jpg", 0.5, (0.25, 0.15, 0.95, 0.85)),
+    "stats":     ("Stats", "Live numbers and daily reports", (58, 66, 84), "play7.jpg", 0.5),
     "liveries":  ("Liveries", "Templates and showcase", (168, 118, 46), "gc_loader.jpg", 0.7),
     "contest":   ("Contest", "Livery of the Month", (168, 118, 46), "liv_southwest.jpg", 0.5),
     "inbox":     ("Inbox", "Every open ticket", (58, 66, 84), "liv_ryanair_carts.jpg", 0.5),
@@ -63,13 +63,15 @@ def make(name, title, sub, colour, shot, focus, box=None):
         size -= 4
         font = ImageFont.truetype(TITLE_FONT, size)
     title_w = probe.textlength(title, font=font)
+    sub_font = ImageFont.truetype(SUB_FONT, 28)
+    text_w = max(title_w, probe.textlength(sub.upper(), font=sub_font))   # panel covers the subtitle too
 
     # colour panel with a soft feathered edge
     opacity = colour[3] if len(colour) > 3 else 240   # lower = more see-through
     panel = Image.new("RGB", (W, H), colour[:3])
     mask = Image.new("L", (W, H), 0)
     md = ImageDraw.Draw(mask)
-    edge, fade = int(max(W * 0.38, 64 + title_w + 30)), int(W * 0.24)
+    edge, fade = int(max(W * 0.38, 64 + text_w + 40)), int(W * 0.24)
     md.rectangle([0, 0, edge, H], fill=opacity)
     for i in range(fade):
         md.line([(edge + i, 0), (edge + i, H)], fill=int(opacity * (1 - i / fade) ** 1.7))
@@ -83,7 +85,6 @@ def make(name, title, sub, colour, shot, focus, box=None):
         sd.line([(0, y), (W, y)], fill=int(60 * (y / H) ** 2))
     canvas = Image.composite(Image.new("RGB", (W, H), (10, 14, 22)), canvas, shade)
 
-    sub_font = ImageFont.truetype(SUB_FONT, 28)
     tx = 64
     box = probe.textbbox((0, 0), title, font=font)          # real glyph box (Segoe has big side bearings)
     title_h, gap, sub_h = box[3] - box[1], 22, 28
