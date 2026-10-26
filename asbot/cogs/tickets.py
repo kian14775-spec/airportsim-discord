@@ -28,7 +28,7 @@ from .. import db, opencloud
 from ..core import (cfg, channel, embed, is_staff, linked_roblox, log, log_staff, role, role_named,
                     roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
-from .. import cards, faq, transcripts, ui
+from .. import cards, faq, ticketlist, transcripts, ui
 from .answers import AnswerModal, guess_keywords
 
 NOTE_PREFIX = "//"
@@ -60,6 +60,12 @@ def ticket(tid: int):
 
 def open_ticket_for(user_id: int):
     return db.one("SELECT * FROM tickets WHERE user_id=? AND status!='closed' ORDER BY id DESC", user_id)
+
+
+def is_command(text: str) -> bool:
+    """`?close`, `?claim` ... are staff commands (asbot/cogs/staffcmds.py), never relayed to the member."""
+    from .staffcmds import COMMANDS
+    return text.startswith("?") and text[1:].split(" ", 1)[0].lower() in COMMANDS
 
 
 def card_data(tid: int) -> dict:
@@ -598,7 +604,8 @@ class Tickets(commands.Cog):
         self.bot = bot
         bot.add_view(SupportCard())
         bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, AssistButton,
-                              transcripts.ViewButton, transcripts.HistoryButton, SaveFixButton)
+                              transcripts.ViewButton, transcripts.HistoryButton, SaveFixButton,
+                              ticketlist.BrowseButton)
         self._dm_nag: dict[int, float] = {}
         self.save_menu = app_commands.ContextMenu(name="Save as instant answer", callback=self.save_answer)
         self.save_menu.default_permissions = discord.Permissions(moderate_members=True)
@@ -682,6 +689,8 @@ class Tickets(commands.Cog):
                                            "over** takes it straight away."),
             cards.section("Replying", "Type in the post and it reaches the member. Start with `//` for a staff-only "
                                       "note."),
+            cards.section("Quick commands", "`?close` · `?ask` · `?claim` · `?urgent` · `?takeover` · `?r hello` · "
+                                            "`?history` · `?delete` (spam) · `?tickets` · `?t 142` · `?help` for all"),
             cards.section("Teach it", "Fixed something new? Press **Save fix as answer**: a few trigger words + the "
                                       "fix in rough notes, the bot writes the sentence. Or `/answer add` anywhere."),
             cards.section("Title dots", "🎧 Support Agent on it · 🟢 new · 🔵 claimed · 🟡 waiting on member · "
@@ -690,9 +699,10 @@ class Tickets(commands.Cog):
                                      "**Send to dev team** · **Take over** · **Save fix as answer** · priority"),
             cards.section("Timers", "No reply in 30 min: Support Team gets one ping. Member silent 48 h: auto-close."),
             cards.divider(),
-            cards.section("Old tickets", "Closing stores the chat and removes the post. Read them with **View "
-                                         "transcript** in the Tickets log, **Past tickets** on a new ticket, or "
-                                         "`/ticket view` · `history` · `search`."),
+            cards.section("Finding tickets", "Closing stores the chat and removes the post. **Browse tickets** "
+                                             "lists every ticket (open, closed, yours, search): pick one to jump to "
+                                             "it or read it."),
+            cards.row(ticketlist.BrowseButton()),
             accent=ui.NEUTRAL, banner_name="inbox"))
         await cards.forum_card("inbox_guide", inbox, "How the inbox works", view, banners=("inbox",))
 
@@ -932,7 +942,8 @@ class Tickets(commands.Cog):
             return await self.close(ticket(t["id"]), by=by, reason=f"closed by {by.display_name} (member unreachable)")
         await self.refresh(t["id"])
 
-    async def close(self, t, by: discord.abc.User | None, reason: str | None = None):
+    async def close(self, t, by: discord.abc.User | None, reason: str | None = None, save: bool = True):
+        """save=False (?delete): spam/troll tickets. The post goes without storing the chat or asking for a rating."""
         if ticket(t["id"])["status"] == "closed":
             return
         db.run("UPDATE tickets SET status='closed', closed=? WHERE id=?", db.now(), t["id"])
@@ -942,13 +953,21 @@ class Tickets(commands.Cog):
         saved = 0
         if thread:
             try:
-                saved = await transcripts.archive(t["id"], thread, self.bot.user.id)
+                if save:
+                    saved = await transcripts.archive(t["id"], thread, self.bot.user.id)
                 await thread.delete()
             except Exception as e:  # noqa: BLE001 - keep the post if storing failed
                 log.warning("ticket %s archive: %s", t["id"], e)
                 await thread.send(f"Closed ({who}). Couldn't store the chat, so this post stays.")
                 await thread.edit(archived=True, locked=True)
         transcripts.prune()
+        db.run("DELETE FROM kv WHERE key IN (?, ?)", f"tbot:{t['id']}", f"ticket_dev:{t['id']}")
+        if not save:
+            db.kv_set(f"tdeleted:{t['id']}", True)
+            await self.send_to_user(t, embed(f"Ticket {t['id']:04d} closed", colour=discord.Colour(GREY)))
+            return await log_staff(self.guild, f"🗑️ Ticket {t['id']:04d} · {topic_label(t['topic'])} · "
+                                               f"<@{t['user_id']}> deleted by {by.display_name if by else 'staff'} "
+                                               "(chat not stored)", kind="Tickets")
         await self.send_to_user(t, embed(f"Ticket {t['id']:04d} closed",
                                          "Thanks for reaching out. How did we do?", colour=discord.Colour(GREY)),
                                 view=rating_view(t["id"]))
@@ -957,12 +976,16 @@ class Tickets(commands.Cog):
         d = card_data(t["id"])
         if t["first_reply"] and d and not d.get("matched") and db.kv_get(f"tlast:{t['id']}"):
             v.add_item(SaveFixButton(t["id"]))
-        db.run("DELETE FROM kv WHERE key IN (?, ?)", f"tbot:{t['id']}", f"ticket_dev:{t['id']}")
         await log_staff(self.guild, f"✅ Ticket {t['id']:04d} · {topic_label(t['topic'])} · <@{t['user_id']}> "
                                     f"{who} · {saved} messages", kind="Tickets", view=v)
 
     ticket_group = app_commands.Group(name="ticket", description="Tickets (staff)",
                                       default_permissions=discord.Permissions(moderate_members=True))
+
+    @ticket_group.command(name="list", description="Browse every ticket: open, closed, yours, search")
+    @staff_only()
+    async def ticket_list(self, interaction: discord.Interaction):
+        await ticketlist.send(interaction)
 
     @ticket_group.command(name="view", description="Open a closed ticket by number")
     @staff_only()
@@ -1032,7 +1055,7 @@ class Tickets(commands.Cog):
 
     async def _from_staff(self, msg: discord.Message):
         t = ticket_for_thread(msg.channel.id)
-        if not t or not is_staff(msg.author) or msg.content.startswith(NOTE_PREFIX):
+        if not t or not is_staff(msg.author) or msg.content.startswith(NOTE_PREFIX) or is_command(msg.content):
             return
         if t["status"] == "closed":
             return await msg.reply("This ticket is closed. The member won't see this.", mention_author=False)

@@ -106,7 +106,8 @@ class TemplatePick(discord.ui.Select):
 
 
 # ---------------- staff: /staff ----------------
-ACTIONS = [("announce", "Post an announcement", "announcements, dev-logs or socials"),
+ACTIONS = [("tickets", "Tickets", "Browse open and closed tickets, read transcripts"),
+           ("announce", "Post an announcement", "announcements, dev-logs or socials"),
            ("status", "Game status", "All good, issues, down, maintenance"),
            ("issues", "Known issues and next update", "What shows on the support card"),
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
@@ -125,6 +126,9 @@ class StaffMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         bot, act = interaction.client, self.values[0]
+        if act == "tickets":
+            from .. import ticketlist
+            return await ticketlist.send(interaction)
         if act == "announce":
             return await interaction.response.send_message("Where, and who gets pinged?",
                                                            view=AnnounceSetup(), ephemeral=True)
