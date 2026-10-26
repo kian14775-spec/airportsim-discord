@@ -60,26 +60,31 @@ def ticket_numbers(d: dt.date) -> dict:
     }
 
 
-def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> discord.Embed:
+def stat_line(*pairs: tuple[str, str]) -> str:
+    """'**64** playing  ·  **86** peak today': the number first and bold, so it reads at a glance."""
+    return "  ·  ".join(f"**{v}** {k}" for k, v in pairs)
+
+
+def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> cards.CardView:
     diff = lambda k: (end.get(k) - start.get(k)) if end.get(k) is not None and start.get(k) is not None else None
     key = f"{d:%Y-%m-%d}"
     joins, leaves = db.kv_get(f"joins:{key}", 0), db.kv_get(f"leaves:{key}", 0)
     t = ticket_numbers(d)
     title = f"{'Today so far' if partial else 'Daily report'} · {d:%a %d %b}"
-    discord_block = ui.kv(("Joined", f"{joins}"), ("Left", f"{leaves}"), ("Net", signed(joins - leaves)),
-                          ("Members", f"{end.get('members', 0):,}"), ("Verified", str(t["verified"])))
-    roblox_block = ui.kv(("Visits", signed(diff("visits"))), ("Group members", signed(diff("group"))),
-                         ("Favourites", signed(diff("favorites"))),
-                         ("Peak players", f"{db.kv_get(f'peak:{key}', 0):,}"),
-                         ("Like ratio", f"{end['likes']}%" if end.get("likes") is not None else "-"))
-    support_block = ui.kv(("Opened", str(t["opened"])), ("Handled", str(t["closed"])),
-                          ("Still open", str(t["open_now"])),
-                          ("First reply", f"{t['first_reply_min']} min" if t["first_reply_min"] is not None else "-"),
-                          ("Rating", t["rating"]), ("Applications", str(t["apps"])))
+    discord_block = stat_line(("net", signed(joins - leaves)), ("joined", f"{joins}"), ("left", f"{leaves}"),
+                              ("verified", str(t["verified"]))) + f"\n-# {end.get('members', 0):,} members in total"
+    roblox_block = stat_line(("visits", signed(diff("visits"))), ("group members", signed(diff("group"))),
+                             ("favourites", signed(diff("favorites")))) + "\n" + stat_line(
+        ("peak players", f"{db.kv_get(f'peak:{key}', 0):,}"),
+        ("likes", f"{end['likes']}%" if end.get("likes") is not None else "-"))
+    support_block = stat_line(("opened", str(t["opened"])), ("handled", str(t["closed"])),
+                              ("still open", str(t["open_now"]))) + "\n" + stat_line(
+        ("first reply", f"{t['first_reply_min']} min" if t["first_reply_min"] is not None else "-"),
+        ("rating", t["rating"]), ("applications", str(t["apps"])))
     parts = [cards.title(title), cards.divider(),
-             cards.section("Discord", discord_block), cards.divider(),
-             cards.section("Roblox", roblox_block), cards.divider(),
-             cards.section("Support", support_block)]
+             cards.section("👥 Discord", discord_block),
+             cards.section("✈️ Roblox", roblox_block),
+             cards.section("🎫 Support", support_block)]
     if not start:
         parts.append(cards.small("First day: Roblox gains start counting from tomorrow"))
     return cards.CardView(cards.container(*parts, accent=ui.BRAND), timeout=600 if partial else None)
@@ -143,23 +148,27 @@ class Stats(commands.Cog):
         key = f"{today():%Y-%m-%d}"
         accent = ui.BAD if urgent else (ui.WAIT if need else ui.GOOD)
         inbox = channel(self.guild, "inbox")
-        tickets_line = f"{open_n} open" + (f" · **{need} need a reply**" if need else " · all answered")
-        if urgent:
-            tickets_line += f" · 🔴 {urgent} urgent"
-        body = ui.kv(("Tickets", tickets_line), ("Applications waiting", str(apps)),
-                     ("In game", f"{snap.get('playing') or 0:,} playing · peak today {db.kv_get(f'peak:{key}', 0):,}"),
-                     ("Today", f"{db.kv_get(f'joins:{key}', 0)} joined · {db.kv_get(f'leaves:{key}', 0)} left"))
-        totals = ui.kv(("Members", f"{snap.get('members', 0):,}"), ("Roblox group", f"{snap.get('group') or 0:,}"),
-                       ("Visits", f"{snap.get('visits') or 0:,}"))
+        verified = db.one("SELECT COUNT(*) n FROM links WHERE linked_at>=?", day_bounds(today())[0])["n"]
         view = cards.CardView(cards.container(
-            cards.title("Right now"), cards.text(body), cards.divider(), cards.section("Totals", totals),
+            cards.title("Right now"),
+            cards.section("🎫 Tickets", stat_line(("open", str(open_n)), ("need a reply", str(need)),
+                                                 ("urgent", str(urgent))) + f"\n-# {apps} application(s) waiting"),
+            cards.section("✈️ In game", stat_line(("playing", f"{snap.get('playing') or 0:,}"),
+                                                 ("peak today", f"{db.kv_get(f'peak:{key}', 0):,}"))),
+            cards.section("👋 Today", stat_line(("joined", str(db.kv_get(f"joins:{key}", 0))),
+                                               ("left", str(db.kv_get(f"leaves:{key}", 0))), ("verified", str(verified)))),
+            cards.divider(),
+            cards.small(f"{snap.get('members', 0):,} members · {snap.get('group') or 0:,} in the Roblox group · "
+                        f"{snap.get('visits') or 0:,} visits · updated <t:{int(db.now())}:R>"),
             cards.row(discord.ui.Button(label="Open the inbox", url=inbox.jump_url)) if inbox else None,
-            cards.small(f"Updated <t:{int(db.now())}:R> · daily report posts at midnight UTC"),
             accent=accent, banner_name="stats"))
         msg = await cards.post_card("staff_summary", out, view, banners=("stats",))
         if msg and not msg.pinned:
             try:
                 await msg.pin()
+                async for m in out.history(limit=5):   # drop the "pinned a message" notice under it
+                    if m.type == discord.MessageType.pins_add and m.author.id == self.guild.me.id:
+                        await m.delete()
             except discord.HTTPException:
                 pass
 
