@@ -1,81 +1,81 @@
 {
   "ch:welcome": {
-    "name": "rules-and-verify",
+    "name": "︱ʀᴜʟᴇꜱ-ᴀɴᴅ-ᴠᴇʀɪꜰʏ",
     "topic": "Rules, verify and your roles. Start here."
   },
   "cat:news": {
-    "name": "STAY TUNED"
+    "name": "AIRPORT SIMULATOR"
   },
   "ch:announcements": {
-    "name": "announcements",
+    "name": "︱ᴀɴɴᴏᴜɴᴄᴇᴍᴇɴᴛꜱ",
     "topic": "Big news about Airport Simulator."
   },
   "ch:devlogs": {
-    "name": "dev-logs",
+    "name": "︱ᴅᴇᴠ-ʟᴏɢꜱ",
     "topic": "Changelogs, polls and sneak peeks."
   },
   "ch:socials": {
-    "name": "socials",
+    "name": "︱ꜱᴏᴄɪᴀʟꜱ",
     "topic": "Our latest posts on social media."
   },
   "cat:support": {
     "name": "HELP"
   },
   "ch:support": {
-    "name": "support",
+    "name": "︱ꜱᴜᴘᴘᴏʀᴛ",
     "topic": "Need help? Use the menu below."
   },
   "ch:feedback": {
-    "name": "ideas-and-bugs",
+    "name": "︱ɪᴅᴇᴀꜱ-ᴀɴᴅ-ʙᴜɢꜱ",
     "topic": "Ideas, bugs and UI suggestions. Vote on the ones you like."
   },
   "cat:community": {
-    "name": "TALK"
+    "name": "ENGAGE"
   },
   "ch:chat": {
-    "name": "general",
+    "name": "︱ɢᴇɴᴇʀᴀʟ",
     "topic": null
   },
   "ch:media": {
-    "name": "media",
+    "name": "︱ᴍᴇᴅɪᴀ",
     "topic": "Screenshots and clips from the game"
   },
   "ch:create_party": {
-    "name": "lounge",
+    "name": "︱ʟᴏᴜɴɢᴇ",
     "topic": null
   },
   "cat:hangar": {
     "name": "CREATE"
   },
   "ch:liveries": {
-    "name": "liveries",
+    "name": "︱ʟɪᴠᴇʀɪᴇꜱ",
     "topic": "Templates are in the pinned post. Share your liveries here."
   },
   "ch:rp_servers": {
-    "name": "rp-servers",
+    "name": "︱ʀᴘ-ꜱᴇʀᴠᴇʀꜱ",
     "topic": "One post per airline or private server. Name, fleet, how to join."
   },
   "cat:staff": {
     "name": "STAFF"
   },
   "ch:staff_chat": {
-    "name": "staff-chat",
+    "name": "︱ꜱᴛᴀꜰꜰ-ᴄʜᴀᴛ",
     "topic": null
   },
   "ch:stats": {
-    "name": "stats",
+    "name": "︱ꜱᴛᴀᴛꜱ",
     "topic": "Live numbers on top, a daily report every day at midnight UTC."
   },
   "ch:logs": {
-    "name": "logs",
+    "name": "︱ʟᴏɢꜱ",
     "topic": null
   },
   "ch:inbox": {
-    "name": "inbox",
+    "name": "︱ɪɴʙᴏx",
     "topic": "Every support ticket is a post here."
   },
   "ch:applications": {
-    "name": "applications",
+    "name": "︱ᴀᴘᴘʟɪᴄᴀᴛɪᴏɴꜱ",
     "topic": "Every staff application is a post here. Vote, discuss, then accept or deny."
   }
 }
