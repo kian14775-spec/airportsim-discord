@@ -11,8 +11,7 @@ game:
 welcome:
   title: Welcome to Airport Simulator
   intro: >-
-    The official community for Airport Simulator on Roblox. Verify below to unlock the
-    server, then pick your roles just below it.
+    The official community for Airport Simulator on Roblox.
   rules:
     - Be respectful. No harassment, hate speech or discrimination.
     - No spam, self-promo or advertising outside the channels made for it.
@@ -29,8 +28,7 @@ welcome:
 # Ping roles in the roles menu (layout role keys)
 ping_roles:
   - {role: ping_announcements, label: Announcements, description: Big news and events}
-  - {role: ping_updates,       label: Updates,       description: New update released}
-  - {role: ping_devlogs,       label: Dev logs,      description: Sneak peeks and progress}
+  - {role: ping_devlogs,       label: Dev logs,      description: Changelogs, polls and sneak peeks}
   - {role: ping_polls,         label: Polls,         description: Vote on what comes next}
   - {role: ping_socials,       label: Socials,       description: New posts on our socials}
 

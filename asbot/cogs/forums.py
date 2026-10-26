@@ -271,11 +271,12 @@ class Forums(commands.Cog):
         view = cards.CardView(cards.container(
             cards.title("Livery of the Month", f"Vote with {star()} on your favourite Showcase posts."),
             cards.divider(),
-            cards.section("Live top 5", top or "No entries yet. Post yours with the **Showcase** tag!"),
+            cards.section("Live top 5", top or "No entries yet. Post yours with the **Showcase** tag."),
+            cards.divider(),
             cards.small(f"Updates every hour · last update <t:{int(db.now())}:R>"),
             accent=ui.WAIT, banner_name="contest"))
         try:
-            await cards.forum_card("contest_board", forum, "🏆 Livery of the Month", view, banners=("contest",),
+            await cards.forum_card("contest_board", forum, "Livery of the Month", view, banners=("contest",),
                                    tags=tags(forum, "Showcase"))
         except discord.HTTPException as e:
             log.warning("contest board: %s", e)

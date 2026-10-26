@@ -14,11 +14,13 @@ W, H = 1200, 400
 TITLE_FONT = "C:/Windows/Fonts/seguibl.ttf"   # Segoe UI Black
 SUB_FONT = "C:/Windows/Fonts/segoeuib.ttf"
 
-# name: (title, subtitle, panel colour, shot, focus x 0-1)
+# name: (title, subtitle, panel colour (r, g, b[, opacity 0-255]), shot, focus x 0-1[, box])
+# box = (x0, y0, x1, y1) as 0-1 of the shot: that area is zoomed in and placed on the right,
+# so the plane sits clear of the colour panel
 BANNERS = {
     "welcome":  ("Welcome", "Airport Simulator", (52, 86, 158), "shot2.jpg", 0.45),
     "rules":    ("Rules", "Read before you verify", (150, 58, 64), "shot4.jpg", 0.40),
-    "support":   ("Support", "We're here to help", (38, 122, 112), "int2.jpg", 0.55),
+    "support":   ("Support", "We're here to help", (22, 25, 32, 180), "liv_southwest.jpg", 0.5, (0.36, 0.08, 1.0, 0.80)),
     "help":      ("Help", "Everything in one place", (52, 86, 158), "liv_klm.jpg", 0.5),
     "stats":     ("Stats", "Live numbers and daily reports", (58, 66, 84), "play7.jpg", 0.5),
     "liveries":  ("Liveries", "Templates and showcase", (168, 118, 46), "gc_loader.jpg", 0.7),
@@ -35,9 +37,21 @@ def cover(img: Image.Image, w: int, h: int, focus: float) -> Image.Image:
     return img.crop((x, y, x + w, y + h))
 
 
-def make(name, title, sub, colour, shot, focus):
+PHOTO_X = 340   # where a boxed shot starts; the panel's feather blends over its left edge
+
+
+def make(name, title, sub, colour, shot, focus, box=None):
     photo = Image.open(SHOTS / shot).convert("RGB")
     bg = cover(photo, W, H, focus)
+    if box:
+        x0, y0, x1, y1 = (int(v * d) for v, d in zip(box, (photo.width, photo.height) * 2))
+        bg = bg.filter(ImageFilter.GaussianBlur(18))
+        sharp = cover(photo.crop((x0, y0, x1, y1)), W - PHOTO_X, H, 0.5)
+        fmask = Image.new("L", sharp.size, 255)   # soft left edge, no seam behind a see-through panel
+        fd = ImageDraw.Draw(fmask)
+        for i in range(220):
+            fd.line([(i, 0), (i, H)], fill=int(255 * (i / 220) ** 1.4))
+        bg.paste(sharp, (PHOTO_X, 0), fmask)
     bg = ImageEnhance.Contrast(ImageEnhance.Color(bg).enhance(1.08)).enhance(1.05)
     canvas = bg.copy()
 
@@ -51,13 +65,14 @@ def make(name, title, sub, colour, shot, focus):
     title_w = probe.textlength(title, font=font)
 
     # colour panel with a soft feathered edge
-    panel = Image.new("RGB", (W, H), colour)
+    opacity = colour[3] if len(colour) > 3 else 240   # lower = more see-through
+    panel = Image.new("RGB", (W, H), colour[:3])
     mask = Image.new("L", (W, H), 0)
     md = ImageDraw.Draw(mask)
     edge, fade = int(max(W * 0.38, 64 + title_w + 30)), int(W * 0.24)
-    md.rectangle([0, 0, edge, H], fill=240)
+    md.rectangle([0, 0, edge, H], fill=opacity)
     for i in range(fade):
-        md.line([(edge + i, 0), (edge + i, H)], fill=int(240 * (1 - i / fade) ** 1.7))
+        md.line([(edge + i, 0), (edge + i, H)], fill=int(opacity * (1 - i / fade) ** 1.7))
     mask = mask.filter(ImageFilter.GaussianBlur(8))
     canvas = Image.composite(panel, canvas, mask)
 

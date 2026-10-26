@@ -68,7 +68,7 @@ def staff_only():
 # #logs has three threads; older names map onto them
 LOG_THREADS = {"Verifications": "Members", "Joins and leaves": "Members", "Members": "Members",
                "Tickets": "Tickets and applications", "Applications": "Tickets and applications",
-               "Moderation": "Moderation", "Bot": "Moderation"}
+               "Moderation": "Moderation", "Bot": "Moderation", "Messages": "Messages"}
 
 
 async def _log_thread(guild: discord.Guild, kind: str) -> discord.abc.Messageable | None:
@@ -95,7 +95,7 @@ async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) ->
     try:
         target = await _log_thread(guild, LOG_THREADS.get(kind, "Moderation"))
         if target:
-            await target.send(text, allowed_mentions=discord.AllowedMentions.none(), **kw)
+            await target.send(text or None, allowed_mentions=discord.AllowedMentions.none(), **kw)
     except discord.HTTPException as e:
         log.warning("could not write to #logs (%s): %s", kind, e)
 

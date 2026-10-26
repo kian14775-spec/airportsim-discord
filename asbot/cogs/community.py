@@ -168,11 +168,13 @@ class Community(commands.Cog):
             cards.divider(),
             cards.section("How to", "**1.** Get a template with `/help` → Livery templates\n"
                                     "**2.** Paint it\n**3.** Post it here with the **Showcase** tag and a picture"),
+            cards.divider(),
             cards.section("Available", names),
+            cards.divider(),
             cards.small("Best livery each month can win Livery of the Month and get added to the game."),
             accent=ui.WAIT, banner_name="liveries"))
         tags = [t for t in forum.available_tags if t.name == "Template"]
-        await cards.forum_card("templates_thread", forum, "📌 Livery templates", view, banners=("liveries",), tags=tags)
+        await cards.forum_card("templates_thread", forum, "Livery templates", view, banners=("liveries",), tags=tags)
 
     async def send_template(self, interaction: discord.Interaction, aircraft: str):
         match = next((p for p in template_files() if p.stem.lower() == aircraft.lower()), None)

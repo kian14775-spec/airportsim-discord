@@ -129,6 +129,11 @@ async def forum_card(key: str, forum: discord.ForumChannel, name: str, view: dis
             except discord.HTTPException:
                 thread = None
     if thread is not None:
+        if thread.name != name and thread.owner_id == forum.guild.me.id:
+            try:
+                await thread.edit(name=name)
+            except discord.HTTPException:
+                pass
         try:
             starter = await thread.fetch_message(thread.id)
             if starter.flags.components_v2:

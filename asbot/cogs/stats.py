@@ -77,6 +77,7 @@ def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> ca
     rating = t["rating"].split(" ")[0] if t["rating"] != "no ratings" else "-"
     parts = [
         cards.title(title),
+        cards.divider(),
         cards.section("Discord", table([("Joined", joins), ("Left", leaves)],
                                        [("Net", signed(joins - leaves)), ("Verified", t["verified"])],
                                        [("Members", f"{end.get('members', 0):,}")])),

@@ -474,11 +474,12 @@ class SupportCard(cards.CardView):
             cards.title("Support", status_line or None),
             cards.divider(),
             cards.section("How it works", "Pick a topic and describe the problem. You'll often get an answer "
-                                          "straight away; if not, a ticket opens and the team replies **in your DMs**."),
-            cards.text(topic_lines),
+                                          "straight away. If not, a ticket opens and the team replies in your DMs."),
+            cards.section("Topics", topic_lines),
+            cards.divider(),
             cards.row(TopicSelect()),
             cards.row(AppealButton(), ApplyButton()),
-            cards.small("Make sure DMs from server members are on · please don't DM staff directly"),
+            cards.small("Keep DMs from server members on, and please don't DM staff directly."),
             accent=accent if accent is not None else ui.BRAND, banner_name="support"))
 
 
@@ -562,11 +563,12 @@ class Tickets(commands.Cog):
             cards.section("Buttons", "**Claim** · **Send to dev team** · **Ask to close** (the member confirms) · "
                                      "**Close now** · priority menu"),
             cards.section("Timers", "No reply in 30 min: Support Team gets one ping. Member silent 48 h: auto-close."),
+            cards.divider(),
             cards.section("Old tickets", "Closing stores the chat and removes the post. Read them with **View "
                                          "transcript** in the Tickets log, **Past tickets** on a new ticket, or "
                                          "`/ticket view` · `history` · `search`."),
             accent=ui.NEUTRAL, banner_name="inbox"))
-        await cards.forum_card("inbox_guide", inbox, "📌 How the inbox works", view, banners=("inbox",))
+        await cards.forum_card("inbox_guide", inbox, "How the inbox works", view, banners=("inbox",))
 
     def blocked_reason(self, user) -> str | None:
         member = self.guild.get_member(user.id)
@@ -597,6 +599,7 @@ class Tickets(commands.Cog):
             cards.text(ui.kv(("Your place", f"#{pos} in line"), ("Usual first reply", f"~{eta} min"))),
             cards.section("What now?", "Reply right here to add details or screenshots. Everything you send in "
                                        "this DM goes to the team, and their answers arrive here too."),
+            cards.divider(),
             cards.row(TicketButton("uclose", tid)),
             accent=ui.BRAND, banner_name="support"))
         try:

@@ -93,7 +93,7 @@ async def welcome_dm(member: discord.Member) -> None:
              if channel(g, k)]
     lines = [f"{channel(g, k).mention} · {label}" for k, label in spots]
     view = cards.CardView(cards.container(
-        cards.title(f"Welcome, {member.display_name}!", "You're verified and all set."),
+        cards.title(f"Welcome, {member.display_name}", "You're verified and all set."),
         cards.divider(),
         cards.section("A few places to start", "\n".join(lines)),
         cards.row(discord.ui.Button(label="Play the game", url=game["link"])),
@@ -161,15 +161,17 @@ class WelcomeCard(cards.CardView):
         start_row = [VerifyButton()] + ([discord.ui.Button(label="Get help", url=sup.jump_url)] if sup else [])
         menus = [cards.row(RoleGroupSelect(g)) for g, (key, _, _) in ROLE_GROUPS.items() if cfg().get(key)]
         super().__init__(
-            cards.container(cards.title(w["title"], w["intro"]), cards.row(*links) if links else None,
-                            accent=ui.BRAND, banner_name="welcome"),
-            cards.container(cards.text(rules), cards.divider(),
+            cards.container(cards.title(w["title"], w["intro"]), cards.divider(),
+                            cards.row(*links) if links else None, accent=ui.BRAND, banner_name="welcome"),
+            cards.container(cards.title("Rules"), cards.text(rules), cards.divider(),
                             cards.small("Breaking the rules can mean a strike, a timeout or a ban."),
                             accent=ui.BAD, banner_name="rules"),
-            cards.container(cards.title("Get started"),
-                            cards.text("**1.** Press **Verify** and link your Roblox account (under a minute)\n"
-                                       "**2.** Pick what pings you and what you play on"),
-                            cards.row(*start_row), *menus, accent=ui.GOOD))
+            cards.container(cards.title("Get started", "Two quick steps and the whole server opens up."),
+                            cards.divider(),
+                            cards.text("**1.** Press **Verify** and link your Roblox account\n"
+                                       "**2.** Choose what pings you and what you play on"),
+                            cards.row(*start_row), cards.divider(), *menus,
+                            cards.small("You can change your roles here any time."), accent=ui.GOOD))
 
 
 class LinkAnywayView(discord.ui.View):

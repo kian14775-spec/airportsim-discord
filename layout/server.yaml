@@ -25,7 +25,6 @@ roles:  # top to bottom. Existing roles are only referenced (name only = the bot
   - {key: ping_announcements, name: "| Announcements |"}
   - {key: ping_devlogs,       name: "| Development |"}
   - {key: ping_socials,       name: "| Social Media |"}
-  - {key: ping_updates,       name: "| Updates |"}
   - {key: ping_polls,         name: "| Polls |"}
   - {key: livery_winner,      name: Livery of the Month, color: "#F1C40F"}
   - {key: plat_pc,      name: PC}

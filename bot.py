@@ -15,7 +15,8 @@ from asbot.paths import DATA, seed_once
 ROOT = Path(__file__).resolve().parent
 COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
         "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community", "asbot.cogs.forums",
-        "asbot.cogs.hub", "asbot.cogs.stats", "asbot.cogs.strikes"]
+        "asbot.cogs.hub", "asbot.cogs.stats", "asbot.cogs.strikes",
+        "asbot.cogs.modlog"]
 
 
 def setup_logging() -> None:
@@ -34,7 +35,7 @@ class AirportBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True            # verify + roles
         intents.message_content = True    # DM tickets
-        super().__init__(command_prefix=commands.when_mentioned, intents=intents,
+        super().__init__(command_prefix=commands.when_mentioned, intents=intents, max_messages=5000,
                          allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
         self.guild_id = int(os.environ["GUILD_ID"])
 

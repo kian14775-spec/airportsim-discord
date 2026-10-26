@@ -11,7 +11,7 @@ from ..ui import BAD, BRAND, GOOD, WAIT
 STATES = {"ok": ("All systems normal", GOOD), "issues": ("Some issues right now", WAIT),
           "down": ("Game is down", BAD), "maintenance": ("Maintenance", BRAND)}
 TARGETS = {"announcements": "announcements", "dev-logs": "devlogs", "socials": "socials"}
-PINGS = {"none": None, "announcements": "ping_announcements", "updates": "ping_updates",
+PINGS = {"none": None, "announcements": "ping_announcements",
          "dev logs": "ping_devlogs", "polls": "ping_polls", "socials": "ping_socials"}
 
 
