@@ -8,7 +8,7 @@ s19 LIVE 2026-10-26 (deployed, channels renamed, selftest 47/47): Support Agent 
 add|list|edit|remove|test (trigger words + rough notes -> sentence), new Components-V2 staff ticket card with the
 verified Roblox account (bot link -> Bloxlink API if BLOXLINK_KEY -> nickname), "answer shown / none fits" flags,
 Save fix button + "save the fix" prompt on close, headset icon (assets/support_agent.png, uploaded as app emoji)
-on support messages only, small-caps channel names in layout/server.yaml.
+on support messages only. Small-caps channel names were tried and REVERTED (breaks channel search): plain names, no divider.
 RULE (Kian 2026-10-26): nothing may cost money or eat the Railway credit. No paid AI. asbot/ai.py polish is
 OFF unless a FREE-tier GEMINI_API_KEY is set (the game-factory key's project is prepaid + empty: don't use it).
 Next:
@@ -59,3 +59,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-26 s18c: ROLES TIDY-UP applied (Kian OK'd plan): deleted ARFF Commissioner, Leg, LOA, | Scheduled Flight |, Unverified. Order top->bottom: Founder, Owner, Co Owner, Admin, Airport Board, Developer, Server Moderator, Trial Moderator, Support Team, PR Team, QA, Star Program, Server Booster, Airport VIP, Livery of the Month, Traveler, PC/Mobile/Console/VR, 4 ping roles, Ticket Blacklisted. Staff colours warm->cool (#D9534F ... #8FBF7F); ping/platform roles no colour. Layout tool never reorders roles (done via API, script in session scratchpad). selftest 47/47.
 - 2026-10-26 s19: SUPPORT AGENT + easy instant answers + staff card V2 + Roblox account on tickets + headset icon (support only) + small-caps channels; offline sims pass; committed, deploy pending Kian's OK. Kian: no paid AI / no Railway credit use.
 - 2026-10-26 s19b: deployed (2 uploads; 2nd retried after timeouts), 16 channels renamed to ︱small-caps, seed state synced, selftest 47/47, app emoji support_agent + /answer registered.
+- 2026-10-26 s19c: small-caps channel names reverted to plain (Kian: can't search them); applied, seed synced, deployed, selftest 47/47. Never use small-caps/fancy unicode in channel names again.
