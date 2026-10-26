@@ -70,7 +70,8 @@ categories:
         tags: [Suggestion, Bug, UI, New*, Under review*, Planned*, Done*]   # * = only staff can set
 
   - key: community
-    name: TALK
+    name: ENGAGE
+    was: [TALK]
     perms: members
     channels:
       - {key: chat,  name: general, was: [chat], slowmode: 3}
