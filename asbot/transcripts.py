@@ -33,12 +33,16 @@ def _kind_and_text(m: discord.Message, bot_id: int) -> tuple[str, str, str]:
     text = m.content or ""
     if m.author.id != bot_id:
         return m.author.display_name, ("note" if text.startswith("//") else "staff"), text
+    if m.flags.components_v2:   # the staff card: keep its text (member, problem, helper line)
+        return "Bot", "bot", "\n".join(_card_text(m.components))
     if m.embeds:
         e = m.embeds[0]
         name = (e.author.name if e.author else "") or ""
         if name.endswith("(member)"):
             return name.removesuffix(" (member)"), "member", e.description or ""
-        if "Support team" in name:
+        if name.startswith("Support Agent · "):   # the support helper's lines in the post
+            return "Support helper", "bot", f"**{name.split(' · ', 1)[1]}**\n{e.description or ''}"
+        if "Support team" in name or name.endswith(" · Support Agent"):
             return name.split(" · ")[0], "staff", e.description or ""
         parts = []
         for e in m.embeds:   # skip the live status card on top of a ticket; keep profile + problem
@@ -48,6 +52,15 @@ def _kind_and_text(m: discord.Message, bot_id: int) -> tuple[str, str, str]:
             parts += [f"{f.name}: {f.value}" for f in e.fields]
         return "Bot", "bot", "\n".join(p for p in parts if p)
     return "Bot", "bot", text
+
+
+def _card_text(items) -> list[str]:
+    out = []
+    for c in items or []:
+        if getattr(c, "content", None) and not str(c.content).startswith("-# Type here"):
+            out.append(c.content)
+        out += _card_text(getattr(c, "children", None) or getattr(c, "components", None))
+    return out
 
 
 async def archive(tid: int, thread: discord.Thread, bot_id: int) -> int:

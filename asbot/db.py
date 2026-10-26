@@ -38,6 +38,7 @@ MIGRATIONS = [
     "ALTER TABLE tickets ADD COLUMN transcript_channel INTEGER",
     "ALTER TABLE tickets ADD COLUMN transcript_message INTEGER",
     "ALTER TABLE applications ADD COLUMN thread_id INTEGER",
+    "ALTER TABLE tickets ADD COLUMN handed REAL",   # when a person took over from the support helper
 ]
 
 _conn: sqlite3.Connection | None = None

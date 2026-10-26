@@ -39,7 +39,7 @@ platform_roles:
   - {role: plat_console, label: Console}
   - {role: plat_vr,      label: VR}
 
-# Support: topics in the ticket menu. `answers` are tried before a ticket opens.
+# Support: topics in the ticket menu. `answers` are what the support helper offers first (staff add more with /answer add).
 support:
   topics:
     - {key: help,     label: Game help,       description: Stuck or confused in game}
@@ -56,6 +56,9 @@ support:
       answer: All livery templates are in the pinned Templates post in liveries, or use /template in any channel.
     - keywords: [private server, rp server, airline]
       answer: Player airlines and private servers are listed in airlines. Owners can make one post there for their server.
+  helper:   # support helper: chats in DM with instant answers before a person joins (no AI)
+    topics: [help, bug, purchase, other]   # report + appeals always go straight to a person
+    max_tries: 3                           # instant answers it tries before handing over
   queue_eta_fallback_min: 15
   snippets:   # /reply <name> inside a ticket
     hello: Hi! Thanks for reaching out, I'm looking into this now.

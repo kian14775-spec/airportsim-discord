@@ -1,8 +1,12 @@
 """Inbox tickets: the member talks to the bot in DMs, staff work in one forum (#inbox).
 
-Flow: support menu -> topic -> short form -> instant answer if the FAQ matches
-("fix it first") -> ticket post in #inbox -> messages relayed both ways.
+Flow: support menu -> topic -> short form -> ticket post in #inbox -> messages relayed both ways.
 Staff messages starting with // stay internal (notes).
+
+Support helper (no AI, nothing paid): when an instant answer matches, the bot greets the member
+in DM, offers the fix with "That fixed it / Still broken / Talk to a person" and keeps matching
+their replies. Staff see every line in the post under "🎧 Support Agent is on it, don't reply yet"; it hands
+over to a person when the member asks, nothing else matches, or staff type in the post.
 
 #inbox only ever holds OPEN tickets. Each post starts with a control card that is
 edited in place (status, priority, claimed by, waiting time) and a title like
@@ -21,10 +25,11 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import db, opencloud
-from ..core import (cfg, channel, embed, is_staff, log, log_staff, role_named, roblox_group_rank,
-                    roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
+from ..core import (cfg, channel, embed, is_staff, linked_roblox, log, log_staff, role, role_named,
+                    roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
 from .. import cards, faq, transcripts, ui
+from .answers import AnswerModal, guess_keywords
 
 NOTE_PREFIX = "//"
 from ..ui import BAD as RED, BRAND as BLUE, GOOD as GREEN, QUIET as GREY, WAIT as AMBER
@@ -33,6 +38,12 @@ WARN_AFTER = 24 * 3600
 CLOSE_AFTER = 48 * 3600
 PRIORITIES = {"low": "Low", "normal": "Normal", "urgent": "Urgent"}
 CARD_FOOTER = "Type here to reply to the member · start a message with // for a staff-only note"
+HUMAN_WORDS = {"human", "person", "staff", "someone", "agent", "mod", "admin", "moderator", "somebody"}
+THANKS_WORDS = {"thanks", "thank", "ty", "tysm", "thx", "fixed", "worked", "sorted", "solved"}
+NOT_WORDS = {"not", "didn't", "didnt", "still", "no", "isn't", "doesn't"}
+AGENT = "Support Agent"   # the name + headset icon on support messages only (the bot's own avatar never changes)
+AGENT_ICON: str | None = None   # app-emoji URL of assets/support_agent.png, set on start
+HELPER_ON = "🎧 **The Support Agent is talking to them. Don't reply yet** (or press **Take over**)."
 
 
 def topics() -> dict[str, dict]:
@@ -51,6 +62,19 @@ def open_ticket_for(user_id: int):
     return db.one("SELECT * FROM tickets WHERE user_id=? AND status!='closed' ORDER BY id DESC", user_id)
 
 
+def card_data(tid: int) -> dict:
+    """What the staff card shows that isn't in the tickets table (problem, member profile, helper line)."""
+    return db.kv_get(f"tcard:{tid}", {})
+
+
+def set_card(tid: int, **changes) -> None:
+    db.kv_set(f"tcard:{tid}", {**card_data(tid), **changes})
+
+
+def helper_state(tid: int) -> dict:
+    return db.kv_get(f"tbot:{tid}", {"shown": [], "said": ""})
+
+
 def ticket_for_thread(thread_id: int):
     return db.one("SELECT * FROM tickets WHERE thread_id=?", thread_id)
 
@@ -67,45 +91,14 @@ def eta_minutes() -> int:
     return max(1, round(sum(r["d"] for r in rows) / len(rows) / 60))
 
 
-class SaveAnswerModal(discord.ui.Modal, title="Save as instant answer"):
-    keywords = discord.ui.TextInput(label="Keywords (comma separated)", max_length=200,
-                                    placeholder="spawn, plane, stuck")
-    answer = discord.ui.TextInput(label="Answer the member gets", style=discord.TextStyle.paragraph, max_length=1500)
-
-    def __init__(self, text: str, words: str):
-        super().__init__()
-        self.answer.default = text[:1500]
-        self.keywords.default = words
-
-    async def on_submit(self, interaction: discord.Interaction):
-        fid = faq.add(self.keywords.value, self.answer.value, interaction.user.id)
-        await interaction.response.send_message(
-            f"Saved as instant answer #{fid}. Members whose problem mentions "
-            f"**{self.keywords.value}** now get it before a ticket opens.", ephemeral=True)
-        await log_staff(interaction.guild, f"Instant answer #{fid} added by {interaction.user.mention}: "
-                                           f"{self.keywords.value}", kind="Tickets")
-
-
-STOPWORDS = {"the", "and", "you", "your", "for", "this", "that", "with", "have", "please", "just", "then", "can",
-             "will", "again", "game", "there", "they", "what", "when", "it's", "from", "into", "also"}
-
-
-def guess_keywords(src: str) -> str:
-    """Suggest a few keywords from the member's problem text."""
-    words = [w.strip(".,!?()") for w in src.lower().split()]
-    seen = []
-    for w in words:
-        if len(w) > 3 and w not in STOPWORDS and w not in seen:
-            seen.append(w)
-    return ", ".join(seen[:4])
-
-
 def state_of(t) -> tuple[str, str, int]:
     """(dot, words, colour) for the title and control card."""
     if t["status"] == "closed":
         return "⚫", "Closed", GREY
     if t["status"] == "closing":
         return "⏳", "Waiting for the member to confirm", AMBER
+    if t["status"] == "bot":
+        return "🎧", "Support Agent is on it", ui.SLATE
     if t["priority"] == "urgent":
         return "🔴", "Urgent", RED
     if t["status"] == "waiting":
@@ -121,7 +114,7 @@ def title_of(t, user_name: str) -> str:
 
 
 def tag_names(t) -> list[str]:
-    tags = ["Waiting" if t["status"] in ("waiting", "closing") else "Open"]
+    tags = ["Waiting" if t["status"] in ("waiting", "closing", "bot") else "Open"]
     if t["claimed_by"]:
         tags.append("Claimed")
     if t["priority"] == "urgent":
@@ -147,40 +140,98 @@ def control_card(t) -> discord.Embed:
     return e
 
 
-async def profile_embed(guild: discord.Guild, user: discord.abc.User, roblox_hint: str | None = None) -> discord.Embed:
+async def gather_profile(guild: discord.Guild, user: discord.abc.User, typed: str | None = None) -> dict:
+    """Everything the member box on the staff card shows, looked up once when the ticket opens."""
     member = guild.get_member(user.id)
-    e = embed(user.display_name, colour=discord.Colour(GREY))
-    e.add_field(name="Discord", value=f"{user.mention}\n`{user.id}`\nAccount <t:{int(user.created_at.timestamp())}:R>")
-    if member and member.joined_at:
-        e.add_field(name="Joined server", value=f"<t:{int(member.joined_at.timestamp())}:R>")
-    link = db.one("SELECT * FROM links WHERE discord_id=?", user.id)
-    rid, rname, note = None, None, ""
-    if link:
-        rid, rname = link["roblox_id"], link["roblox_name"]
-    elif roblox_hint:
-        found = await roblox_user_by_name(roblox_hint)
+    p = {"id": user.id, "name": user.name, "created": int(user.created_at.timestamp()),
+         "joined": int(member.joined_at.timestamp()) if member and member.joined_at else None,
+         "verified_role": bool(member and role(guild, "verified") in member.roles), "roblox": None}
+    try:
+        found = await linked_roblox(guild, user)
+        how = found[2] if found else None
+        if not found and typed:
+            hit = await roblox_user_by_name(typed)
+            found, how = ((hit["id"], hit["name"], "typed, not verified") if hit else None), "typed, not verified"
         if found:
-            rid, rname, note = found["id"], found["name"], " (typed, not verified)"
-    if rid:
-        info = await roblox_user(rid) or {}
-        created = info.get("created", "")[:10]
-        rank = await roblox_group_rank(rid, cfg()["game"]["group_id"])
-        lines = [f"[{rname}](https://www.roblox.com/users/{rid}/profile){note}", f"ID `{rid}`"]
-        if created:
-            lines.append(f"Roblox account since {created}")
-        lines.append(f"Group rank: {rank or 'not in group'}")
-        ban = await opencloud.get_ban(rid)
-        if ban:
-            lines.append(f"**Game banned**: {ban.get('displayReason') or 'no reason given'}")
-        e.add_field(name="Roblox", value="\n".join(lines), inline=False)
-        thumb = await roblox_headshot(rid)
-        if thumb:
-            e.set_thumbnail(url=thumb)
+            rid, rname = found[0], found[1]
+            info = await roblox_user(rid) or {}
+            ban = await opencloud.get_ban(rid)
+            p["roblox"] = {"id": rid, "name": rname, "display": info.get("displayName") or rname, "how": how,
+                           "since": (info.get("created") or "")[:10],
+                           "rank": await roblox_group_rank(rid, cfg()["game"]["group_id"]),
+                           "ban": (ban.get("displayReason") or "no reason given") if ban else None,
+                           "thumb": await roblox_headshot(rid)}
+    except Exception as e:  # noqa: BLE001 - Roblox being slow must never block a ticket
+        log.warning("ticket profile: %s", e)
+    return p
+
+
+def member_text(p: dict, past: int) -> str:
+    lines = [f"<@{p['id']}> · `{p['name']}`"]
+    bits = [f"Discord account <t:{p['created']}:R>"]
+    if p.get("joined"):
+        bits.append(f"joined <t:{p['joined']}:R>")
+    bits.append(f"{past} past ticket{'s' if past != 1 else ''}" if past else "first ticket")
+    lines.append(" · ".join(bits))
+    r = p.get("roblox")
+    if r:
+        mark = {"verified": "✅ verified", "verified with Bloxlink": "✅ verified (Bloxlink)",
+                "from their nickname": "☑️ from their nickname"}.get(r["how"], "⚠️ typed, not verified")
+        name = r["name"] if r["display"] == r["name"] else f"{r['display']} (@{r['name']})"
+        lines.append(f"**Roblox** [{name}](https://www.roblox.com/users/{r['id']}/profile) · {mark}")
+        extra = [f"ID `{r['id']}`", f"group: {r['rank'] or 'not in group'}"]
+        if r.get("since"):
+            extra.append(f"since {r['since']}")
+        lines.append("-# " + " · ".join(extra))
+        if r.get("ban"):
+            lines.append(f"**Game banned:** {r['ban']}")
     else:
-        e.add_field(name="Roblox", value="Not linked", inline=False)
-    past = db.one("SELECT COUNT(*) n FROM tickets WHERE user_id=? AND status='closed'", user.id)["n"]
-    e.set_footer(text=f"{past} past ticket(s)")
-    return e
+        lines.append("**Roblox** not linked" + (" (verified role, but no account found)" if p.get("verified_role")
+                                                else ""))
+    return "\n".join(lines)
+
+
+def staff_card(t) -> discord.ui.LayoutView:
+    """The one card on top of every ticket post: state, member, problem, helper line, buttons."""
+    dot, words, colour = state_of(t)
+    d = card_data(t["id"])
+    p = d.get("profile") or {"id": t["user_id"], "name": str(t["user_id"]), "created": int(t["created"])}
+    past = db.one("SELECT COUNT(*) n FROM tickets WHERE user_id=? AND status='closed'", t["user_id"])["n"]
+    last = t["last_activity"] or t["created"]
+    claimed = f"<@{t['claimed_by']}>" if t["claimed_by"] else "nobody"
+    head = cards.title(f"{dot} {t['id']:04d} · {topic_label(t['topic'])}",
+                       f"**{words}**\n-# opened <t:{int(t['created'])}:R> · last message <t:{int(last)}:R> · "
+                       f"priority {PRIORITIES.get(t['priority'], 'Normal').lower()} · claimed by {claimed}")
+    who = cards.section("Member", member_text(p, past))
+    thumb = (p.get("roblox") or {}).get("thumb")
+    member_part = discord.ui.Section(who, accessory=discord.ui.Thumbnail(thumb)) if thumb else who
+    problem = (d.get("problem") or "-")[:1500]
+    if d.get("extra"):
+        problem += f"\n**Details** · {d['extra'][:300]}"
+    row1 = [TicketButton(a, t["id"]) for a in ("claim", "close", "force", "dev")]
+    row2 = []
+    if t["status"] == "bot":
+        row2.append(TicketButton("takeover", t["id"]))
+    row2.append(TicketButton("save", t["id"]))
+    if t["topic"] == "appeal":
+        row2.append(TicketButton("unban", t["id"]))
+    if past:
+        row2.append(transcripts.HistoryButton(t["user_id"], past))
+    notes = [n for n in (d.get("helper"), d.get("flag")) if n]
+    view = cards.CardView(cards.container(
+        head,
+        cards.divider(),
+        member_part,
+        cards.divider(),
+        cards.section("Problem", problem),
+        cards.text("\n".join(notes)) if notes else None,
+        cards.divider(),
+        cards.row(*row1),
+        cards.row(*row2),
+        cards.row(PrioritySelect(t["id"])),
+        cards.small(CARD_FOOTER),
+        accent=colour))
+    return view
 
 
 def link_copy(src: discord.Message, copy: discord.Message, tid: int, side: str) -> None:
@@ -194,7 +245,9 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
     LABELS = {"claim": ("Claim", discord.ButtonStyle.primary), "dev": ("Send to dev team", discord.ButtonStyle.secondary),
               "close": ("Ask to close", discord.ButtonStyle.success), "force": ("Close now", discord.ButtonStyle.danger),
               "unban": ("Unban in game", discord.ButtonStyle.success),
-              "uclose": ("Close my ticket", discord.ButtonStyle.secondary)}
+              "uclose": ("Close my ticket", discord.ButtonStyle.secondary),
+              "save": ("Save fix as answer", discord.ButtonStyle.secondary),
+              "takeover": ("Take over", discord.ButtonStyle.primary)}
 
     def __init__(self, action: str, tid: int):
         label, style = self.LABELS[action]
@@ -218,6 +271,18 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
         member = cog.guild.get_member(interaction.user.id)
         if not member or not is_staff(member):
             return await interaction.response.send_message("Staff only.", ephemeral=True)
+        if self.action == "save":
+            d = card_data(t["id"])
+            last = db.kv_get(f"tlast:{t['id']}", "")
+            return await interaction.response.send_modal(
+                AnswerModal(guess_keywords(d.get("problem", "")), last, ticket_id=t["id"]))
+        if self.action == "takeover":
+            if t["status"] != "bot":
+                return await interaction.response.send_message("The Support Agent isn't on this one.", ephemeral=True)
+            await interaction.response.send_message(f"{member.mention} took over from the Support Agent.",
+                                                    allowed_mentions=discord.AllowedMentions.none())
+            db.run("UPDATE tickets SET claimed_by=COALESCE(claimed_by, ?) WHERE id=?", member.id, t["id"])
+            return await cog.handoff(t, "taken over", by=member)
         if self.action == "claim":
             db.run("UPDATE tickets SET claimed_by=? WHERE id=?", member.id, t["id"])
             await interaction.response.send_message(f"You claimed ticket {t['id']:04d}.", ephemeral=True)
@@ -300,7 +365,8 @@ class ConfirmClose(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
         if self.ans == "yes":
             await interaction.response.edit_message(content="Great, closing it now.", view=None)
             return await cog.close(t, by=interaction.user, reason="closed, the member confirmed it's solved")
-        db.run("UPDATE tickets SET status='open', last_activity=? WHERE id=?", db.now(), t["id"])
+        db.run("UPDATE tickets SET status='open', last_activity=?, handed=COALESCE(handed, ?) WHERE id=?",
+               db.now(), db.now(), t["id"])
         await interaction.response.edit_message(content="Got it, it stays open. Tell us what's still wrong here.",
                                                 view=None)
         thread = await cog.fetch_thread(t["thread_id"])
@@ -329,6 +395,66 @@ class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rat
         await interaction.response.edit_message(content=f"Thanks! You rated this {'★' * self.score}.", view=None)
         cog = interaction.client.get_cog("Tickets")
         await log_staff(cog.guild, f"Ticket {self.tid:04d} rated {'★' * self.score} by the member", kind="Tickets")
+
+
+class AssistButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:ta:(?P<id>\d+):(?P<ans>fixed|not|human)"):
+    """The member's buttons under a support helper suggestion (in their DMs)."""
+    LABELS = {"fixed": ("That fixed it", discord.ButtonStyle.success),
+              "not": ("Still broken", discord.ButtonStyle.secondary),
+              "human": ("Talk to a person", discord.ButtonStyle.secondary)}
+
+    def __init__(self, tid: int, ans: str):
+        label, style = self.LABELS[ans]
+        super().__init__(discord.ui.Button(label=label, style=style, custom_id=f"asbot:ta:{tid}:{ans}"))
+        self.tid, self.ans = tid, ans
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]), match["ans"])
+
+    async def callback(self, interaction: discord.Interaction):
+        cog: Tickets = interaction.client.get_cog("Tickets")
+        t = ticket(self.tid)
+        if not t or t["user_id"] != interaction.user.id or t["status"] != "bot":
+            return await interaction.response.send_message("A person is already looking at this one, just reply "
+                                                           "here.", ephemeral=True)
+        await interaction.response.defer()
+        try:
+            await interaction.message.edit(view=None)   # one answer per suggestion
+        except discord.HTTPException:
+            pass
+        await cog.member_said(t, self.LABELS[self.ans][0])
+        if self.ans == "fixed":
+            await cog.helper_fixed(t)
+        elif self.ans == "not":
+            await cog.helper_next(t, "")
+        else:
+            await cog.handoff(t, "the member asked for a person")
+
+
+def helper_view(tid: int) -> discord.ui.View:
+    v = discord.ui.View(timeout=None)
+    for a in ("fixed", "not", "human"):
+        v.add_item(AssistButton(tid, a))
+    return v
+
+
+class SaveFixButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:tfa:(?P<id>\d+)"):
+    """On a closed ticket in the Tickets log: no instant answer covered it, so offer to save the fix."""
+    def __init__(self, tid: int):
+        super().__init__(discord.ui.Button(label="Save the fix as an instant answer", style=discord.ButtonStyle.primary,
+                                           custom_id=f"asbot:tfa:{tid}"))
+        self.tid = tid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        if not is_staff(interaction.user):
+            return await interaction.response.send_message("Staff only.", ephemeral=True)
+        await interaction.response.send_modal(AnswerModal(guess_keywords(card_data(self.tid).get("problem", "")),
+                                                          db.kv_get(f"tlast:{self.tid}", ""), ticket_id=self.tid))
 
 
 def staff_view(t) -> discord.ui.View:
@@ -373,50 +499,28 @@ def rating_view(tid: int) -> discord.ui.View:
 
 # ---------- opening ----------
 class IssueModal(discord.ui.Modal):
-    def __init__(self, topic: dict):
+    def __init__(self, topic: dict, known_roblox: bool = False):
         super().__init__(title=topic["label"][:45])
         self.topic = topic
         extra = {"purchase": "Item name and when you bought it", "report": "Their Roblox username",
                  "bug": "Where in the game it happens"}.get(topic["key"])
         self.details = discord.ui.TextInput(label="What's going on?", style=discord.TextStyle.paragraph,
                                             min_length=10, max_length=1500)
-        self.username = discord.ui.TextInput(label="Your Roblox username", required=False, max_length=20)
         self.add_item(self.details)
-        self.add_item(self.username)
+        self.username = None
+        if not known_roblox:   # verified members aren't asked: the card already shows their account
+            self.username = discord.ui.TextInput(label="Your Roblox username", required=False, max_length=20)
+            self.add_item(self.username)
         self.extra = None
         if extra:
             self.extra = discord.ui.TextInput(label=extra, required=False, max_length=200)
             self.add_item(self.extra)
 
     async def on_submit(self, interaction: discord.Interaction):
-        text = self.details.value
-        extra = self.extra.value if self.extra else ""
-        entry = faq.match(text + " " + extra)
-        if entry:
-            view = TriageView(self.topic, text, extra, self.username.value, entry)
-            return await interaction.response.send_message(embed=embed("Try this first", entry["answer"], tone="brand"),
-                                                           view=view, ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await interaction.client.get_cog("Tickets").open(interaction, self.topic["key"], text, extra,
-                                                          self.username.value)
-
-
-class TriageView(discord.ui.View):
-    def __init__(self, topic, text, extra, username, entry=None):
-        super().__init__(timeout=900)
-        self.args = (topic["key"], text, extra, username)
-        self.entry = entry
-
-    @discord.ui.button(label="That fixed it", style=discord.ButtonStyle.success)
-    async def fixed(self, interaction: discord.Interaction, _):
-        db.kv_set("triage_solved", db.kv_get("triage_solved", 0) + 1)
-        faq.counted(self.entry)
-        await interaction.response.edit_message(content="Glad that helped!", embed=None, view=None)
-
-    @discord.ui.button(label="I still need help", style=discord.ButtonStyle.secondary)
-    async def still(self, interaction: discord.Interaction, _):
-        await interaction.response.edit_message(content="Opening a ticket...", embed=None, view=None)
-        await interaction.client.get_cog("Tickets").open(interaction, *self.args)
+        await interaction.client.get_cog("Tickets").open(
+            interaction, self.topic["key"], self.details.value, self.extra.value if self.extra else "",
+            self.username.value if self.username else "")
 
 
 class AppealModal(discord.ui.Modal, title="Game ban appeal"):
@@ -441,7 +545,10 @@ class TopicSelect(discord.ui.Select):
         blocked = cog.blocked_reason(interaction.user)
         if blocked:
             return await interaction.response.send_message(blocked, ephemeral=True)
-        await interaction.response.send_modal(IssueModal(topics()[self.values[0]]))
+        verified = role(interaction.guild, "verified")
+        known = bool(db.one("SELECT 1 FROM links WHERE discord_id=?", interaction.user.id)
+                     or (verified and verified in getattr(interaction.user, "roles", [])))
+        await interaction.response.send_modal(IssueModal(topics()[self.values[0]], known))
 
 
 class AppealButton(discord.ui.Button):
@@ -476,7 +583,7 @@ class SupportCard(cards.CardView):
             cards.divider(),
             cards.text("**1.** Pick a topic below\n"
                        "**2.** Describe the problem in a sentence or two\n"
-                       "**3.** Get an instant answer, or a ticket opens and the team replies in your DMs"),
+                       "**3.** Our Support Agent replies in your DMs straight away, and a person joins if it can't fix it"),
             cards.row(TopicSelect()),
             cards.divider(),
             cards.section("Something else", "Banned in game and think it was a mistake? Want to join the team?"),
@@ -490,8 +597,8 @@ class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(SupportCard())
-        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, transcripts.ViewButton,
-                              transcripts.HistoryButton)
+        bot.add_dynamic_items(TicketButton, RateButton, PrioritySelect, ConfirmClose, AssistButton,
+                              transcripts.ViewButton, transcripts.HistoryButton, SaveFixButton)
         self._dm_nag: dict[int, float] = {}
         self.save_menu = app_commands.ContextMenu(name="Save as instant answer", callback=self.save_answer)
         self.save_menu.default_permissions = discord.Permissions(moderate_members=True)
@@ -512,15 +619,10 @@ class Tickets(commands.Cog):
             text = text[len(NOTE_PREFIX):].strip()
         if not text:
             return await interaction.response.send_message("That message has no text to save.", ephemeral=True)
-        problem = ""
-        if isinstance(interaction.channel, discord.Thread):   # keywords come from the member's problem
-            try:
-                starter = await interaction.channel.fetch_message(interaction.channel.id)
-                problem = next((e.description or "" for e in starter.embeds
-                                if (e.title or "").startswith("The problem")), "")
-            except discord.HTTPException:
-                pass
-        await interaction.response.send_modal(SaveAnswerModal(text, guess_keywords(problem or text)))
+        t = ticket_for_thread(interaction.channel_id) if isinstance(interaction.channel, discord.Thread) else None
+        problem = card_data(t["id"]).get("problem", "") if t else ""
+        await interaction.response.send_modal(AnswerModal(guess_keywords(problem or text), text,
+                                                          ticket_id=t["id"] if t else None))
 
     @property
     def guild(self) -> discord.Guild:
@@ -539,6 +641,7 @@ class Tickets(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        await self.ensure_agent_icon()
         await self.ensure_inbox_guide()
         from ..paths import SEED   # tickets closed before the in-bot history existed
         for f in sorted((SEED / "import").glob("ticket-*.json")):
@@ -552,6 +655,19 @@ class Tickets(commands.Cog):
             except Exception as e:  # noqa: BLE001 - one bad ticket must not stop the rest
                 log.warning("refresh ticket %s: %s", t["id"], e)
 
+    async def ensure_agent_icon(self):
+        """Upload the headset icon once as an app emoji: a permanent link only support messages use."""
+        global AGENT_ICON
+        from ..paths import ROOT
+        try:
+            emoji = next((e for e in await self.bot.fetch_application_emojis() if e.name == "support_agent"), None)
+            if emoji is None:
+                emoji = await self.bot.create_application_emoji(
+                    name="support_agent", image=(ROOT / "assets" / "support_agent.png").read_bytes())
+            AGENT_ICON = emoji.url
+        except (discord.HTTPException, OSError) as e:
+            log.warning("agent icon: %s", e)
+
     async def ensure_inbox_guide(self):
         inbox = channel(self.guild, "inbox")
         if not isinstance(inbox, discord.ForumChannel):
@@ -560,11 +676,18 @@ class Tickets(commands.Cog):
             cards.title("How the inbox works", "Every post here is one open ticket. Members talk to the bot in "
                                                "their DMs; you just type in the post."),
             cards.divider(),
+            cards.section("Support Agent", "When an instant answer fits, the Support Agent chats with the member "
+                                           "first (🎧 in the title). Don't reply yet: it hands over by itself when "
+                                           "they ask for a person or nothing fits. Typing in the post or **Take "
+                                           "over** takes it straight away."),
             cards.section("Replying", "Type in the post and it reaches the member. Start with `//` for a staff-only "
-                                      "note. Right-click a good reply → Apps → **Save as instant answer**."),
-            cards.section("Title dots", "🟢 new · 🔵 claimed · 🟡 waiting on member · ⏳ asked to close · 🔴 urgent"),
-            cards.section("Buttons", "**Claim** · **Send to dev team** · **Ask to close** (the member confirms) · "
-                                     "**Close now** · priority menu"),
+                                      "note."),
+            cards.section("Teach it", "Fixed something new? Press **Save fix as answer**: a few trigger words + the "
+                                      "fix in rough notes, the bot writes the sentence. Or `/answer add` anywhere."),
+            cards.section("Title dots", "🎧 Support Agent on it · 🟢 new · 🔵 claimed · 🟡 waiting on member · "
+                                        "⏳ asked to close · 🔴 urgent"),
+            cards.section("Buttons", "**Claim** · **Ask to close** (the member confirms) · **Close now** · "
+                                     "**Send to dev team** · **Take over** · **Save fix as answer** · priority"),
             cards.section("Timers", "No reply in 30 min: Support Team gets one ping. Member silent 48 h: auto-close."),
             cards.divider(),
             cards.section("Old tickets", "Closing stores the chat and removes the post. Read them with **View "
@@ -591,48 +714,166 @@ class Tickets(commands.Cog):
         inbox = channel(self.guild, "inbox")
         if not isinstance(inbox, discord.ForumChannel):
             return await interaction.followup.send("Support isn't set up yet. Try again later.", ephemeral=True)
+        hcfg = cfg()["support"].get("helper", {})
+        found = faq.match(f"{text} {extra}")
+        helping = bool(found and topic_key in hcfg.get("topics", []))
         now = db.now()
-        tid = db.run("INSERT INTO tickets(user_id, topic, created, last_activity) VALUES(?, ?, ?, ?)",
-                     user.id, topic_key, now, now)
+        tid = db.run("INSERT INTO tickets(user_id, topic, status, created, last_activity, handed) "
+                     "VALUES(?, ?, ?, ?, ?, ?)", user.id, topic_key, "bot" if helping else "open", now, now,
+                     None if helping else now)
         label = topic_label(topic_key)
         pos, eta = queue_position(tid), eta_minutes()
-        hello = cards.CardView(cards.container(
-            cards.title(f"Ticket {tid:04d} · {label}", "Thanks, the team has your message."),
-            cards.divider(),
-            cards.text(ui.kv(("Your place", f"#{pos} in line"), ("Usual first reply", f"~{eta} min"))),
-            cards.section("What now?", "Reply right here to add details or screenshots. Everything you send in "
-                                       "this DM goes to the team, and their answers arrive here too."),
-            cards.divider(),
-            cards.row(TicketButton("uclose", tid)),
-            accent=ui.BRAND, banner_name="support"))
+        if helping:
+            db.kv_set(f"tbot:{tid}", {"shown": [found["id"]], "said": f"{text} {extra}", "tries": 1})
+            first = (user.display_name or "there").split()[0]
+            parts = [cards.title(f"Ticket {tid:04d} · {label}",
+                                 f"Hiya {first}! I'm the Support Agent. I think I know this one:"),
+                     cards.divider(),
+                     cards.text(found["answer"][:1800]),
+                     cards.row(*[AssistButton(tid, a) for a in ("fixed", "not", "human")]),
+                     cards.divider(),
+                     cards.small("Not it? Reply here in your own words, or press Talk to a person. "
+                                 "The team can see this chat.")]
+        else:
+            parts = [cards.title(f"Ticket {tid:04d} · {label}", "Thanks, the team has your message."),
+                     cards.divider(),
+                     cards.text(ui.kv(("Your place", f"#{pos} in line"), ("Usual first reply", f"~{eta} min"))),
+                     cards.section("What now?", "Reply right here to add details or screenshots. Everything you "
+                                                "send in this DM goes to the team, and their answers arrive here "
+                                                "too."),
+                     cards.divider(),
+                     cards.row(TicketButton("uclose", tid))]
+        if AGENT_ICON:   # the headset next to the title, so members know it's support talking
+            parts[0] = discord.ui.Section(parts[0], accessory=discord.ui.Thumbnail(AGENT_ICON))
+        hello = cards.CardView(cards.container(*parts, accent=ui.BRAND, banner_name="support"))
         try:
             await user.send(view=hello, files=cards.files_for("support"))
         except discord.Forbidden:
             db.run("DELETE FROM tickets WHERE id=?", tid)
+            db.run("DELETE FROM kv WHERE key=?", f"tbot:{tid}")
             return await interaction.followup.send(
                 "I can't DM you. Turn on **Direct Messages** for this server (server name > Privacy Settings), "
                 "then try again.", ephemeral=True)
-        issue = embed(f"The problem · {label}", text[:4000], colour=discord.Colour(AMBER))
-        if extra:
-            issue.add_field(name="Details", value=extra[:1000], inline=False)
+        helper, flag = None, None
+        if helping:
+            helper = (HELPER_ON + f"\n-# Sent instant answer {faq.label(found)}")
+        elif found:
+            flag = (f"-# ⚡ Instant answer {faq.label(found)} fits this, but {label.lower()} tickets always go "
+                    "to a person.")
+        else:
+            flag = "-# No instant answer fits this one. Fixed it? Press **Save fix** so the next member gets it."
         if topic_key == "appeal" and username:
-            found = await roblox_user_by_name(username)
-            if found:
-                db.kv_set(f"ticket_roblox:{tid}", found["id"])
-                ban = await opencloud.get_ban(found["id"])
-                issue.add_field(name="Ban on record", value=(
-                    f"{ban.get('displayReason') or 'no public reason'}\nPrivate: {ban.get('privateReason') or '-'}"
-                    if ban else ("Not banned (or Open Cloud not set up)" if opencloud.available()
-                                 else "Open Cloud key not set up, check by hand")), inline=False)
-        prof = await profile_embed(self.guild, user, username or None)
+            hit = await roblox_user_by_name(username)
+            if hit:
+                db.kv_set(f"ticket_roblox:{tid}", hit["id"])
+                ban = await opencloud.get_ban(hit["id"])
+                rec = (f"{ban.get('displayReason') or 'no public reason'} · private: {ban.get('privateReason') or '-'}"
+                       if ban else ("not banned" if opencloud.available() else "Open Cloud key not set up, check "
+                                                                               "by hand"))
+                extra = (extra + "\n" if extra else "") + f"**Ban on record:** {rec}"
+        profile = await gather_profile(self.guild, user, username or None)
+        db.kv_set(f"tcard:{tid}", {"problem": text, "extra": extra, "profile": profile, "helper": helper,
+                                   "flag": flag, "matched": bool(found)})
         t = ticket(tid)
         tags = [tg for tg in inbox.available_tags if tg.name in tag_names(t)]
-        made = await inbox.create_thread(
-            name=title_of(t, user.name), embeds=[control_card(t), prof, issue], applied_tags=tags,
-            view=staff_view(t), allowed_mentions=discord.AllowedMentions.none())
+        made = await inbox.create_thread(name=title_of(t, user.name), view=staff_card(t), applied_tags=tags,
+                                         allowed_mentions=discord.AllowedMentions.none())
         db.run("UPDATE tickets SET thread_id=? WHERE id=?", made.thread.id, tid)
+        if helping:
+            await self.helper_note(made.thread, found["answer"], f"Sent instant answer {faq.label(found)}")
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
-        await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}", kind="Tickets")
+        await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
+                                    + (" · Support Agent on it" if helping else ""), kind="Tickets")
+
+    # ---------- support helper (rule based: instant answers only, no AI) ----------
+    async def helper_note(self, thread, text: str, what: str = "Support helper"):
+        """Show staff what the helper told the member."""
+        e = embed(description=text[:4000], colour=discord.Colour(ui.SLATE))
+        e.set_author(name=f"{AGENT} · {what}", icon_url=AGENT_ICON)
+        await thread.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
+
+    async def helper_say(self, t, text: str, view=None, what: str = "Support helper"):
+        e = embed(description=text, colour=discord.Colour(BLUE))
+        e.set_author(name=AGENT, icon_url=AGENT_ICON)
+        await self.send_to_user(t, e, view=view)
+        thread = await self.fetch_thread(t["thread_id"])
+        if thread:
+            await self.helper_note(thread, text, what)
+
+    async def member_said(self, t, words: str):
+        """Mirror a button press into the post, so the chat reads naturally for staff."""
+        thread = await self.fetch_thread(t["thread_id"])
+        if thread:
+            user = self.bot.get_user(t["user_id"])
+            e = embed(description=f"*pressed* **{words}**", colour=discord.Colour(AMBER))
+            e.set_author(name=f"{user.display_name if user else 'Member'} (member)",
+                         icon_url=user.display_avatar.url if user else None)
+            await thread.send(embed=e)
+
+    async def helper_fixed(self, t):
+        st = helper_state(t["id"])
+        last = st["shown"][-1] if st["shown"] else None
+        entry = next((e for e in faq.entries() if e["id"] == last), None)
+        faq.counted(entry)
+        db.kv_set("triage_solved", db.kv_get("triage_solved", 0) + 1)
+        db.run("UPDATE tickets SET status='closing', last_activity=? WHERE id=?", db.now(), t["id"])
+        db.run("DELETE FROM kv WHERE key=?", f"tbot:{t['id']}")
+        set_card(t["id"], helper=f"✅ **Instant answer fixed it** ({faq.label(entry) if entry else 'answer'}). "
+                                 "Asked the member to close.")
+        v = discord.ui.View(timeout=None)
+        v.add_item(ConfirmClose(t["id"], "yes"))
+        v.add_item(ConfirmClose(t["id"], "no"))
+        await self.helper_say(ticket(t["id"]), "No worries, glad that sorted it! Are you happy for this ticket to "
+                                               "be closed?", view=v, what="Asked to close")
+        await self.refresh(t["id"])
+
+    async def helper_next(self, t, said: str):
+        """Try the next instant answer that fits everything the member said, else hand over."""
+        st = helper_state(t["id"])
+        st["said"] = f"{st.get('said', '')} {said}".strip()[-3000:]
+        nxt = faq.match(st["said"], skip=set(st["shown"]))
+        if nxt and st.get("tries", 1) < cfg()["support"].get("helper", {}).get("max_tries", 3):
+            st["shown"].append(nxt["id"])
+            st["tries"] = st.get("tries", 1) + 1
+            db.kv_set(f"tbot:{t['id']}", st)
+            db.run("UPDATE tickets SET last_activity=? WHERE id=?", db.now(), t["id"])
+            set_card(t["id"], helper=HELPER_ON + f"\n-# Tried {len(st['shown'])} instant answers so far")
+            await self.helper_say(t, f"Okay, let's try something else:\n\n{nxt['answer']}",
+                                  view=helper_view(t["id"]), what=f"Sent instant answer {faq.label(nxt)}")
+            return await self.refresh(t["id"])
+        db.kv_set(f"tbot:{t['id']}", st)
+        await self.handoff(t, "no instant answer fits their reply" if said else "the instant answer didn't fix it")
+
+    async def handoff(self, t, reason: str, by: discord.Member | None = None):
+        """Support helper -> a person. The 30-minute nudge starts now."""
+        t = ticket(t["id"])
+        if t["status"] != "bot":
+            return
+        now = db.now()
+        db.run("UPDATE tickets SET status='open', handed=?, nudged=0, last_activity=? WHERE id=?", now, now, t["id"])
+        db.run("DELETE FROM kv WHERE key=?", f"tbot:{t['id']}")
+        if by:
+            set_card(t["id"], helper=f"👤 {by.mention} took over from the Support Agent.")
+            await self.send_to_user(t, embed(description=f"**{by.display_name}** from the team has joined. "
+                                                         "Carry on here.", colour=discord.Colour(GREEN)))
+        else:
+            set_card(t["id"], helper=f"👤 **Needs a person:** {reason}. You're up!")
+            await self.helper_say(t, "Okay, I'll pass you over to a person. They'll reply right here, usually "
+                                     f"within ~{eta_minutes()} min. Add anything that helps, like screenshots or "
+                                     "where in the game it happens.", what="Handed over")
+        await self.refresh(t["id"])
+        why = f"taken over by {by.display_name}" if by else reason
+        await log_staff(self.guild, f"Ticket {t['id']:04d}: Support Agent handed over ({why})", kind="Tickets")
+
+    async def helper_reply(self, t, text: str):
+        """The member typed while the helper is on: wants a person? says thanks? or a new detail to match."""
+        low = text.lower()
+        words = set(faq.WORD.findall(low))
+        if words & HUMAN_WORDS or "talk to" in low or "real person" in low:
+            return await self.handoff(t, "the member asked for a person")
+        if len(text) < 80 and (words & THANKS_WORDS or "works now" in low) and not words & NOT_WORDS:
+            return await self.helper_fixed(t)
+        await self.helper_next(t, text)
 
     async def refresh(self, tid: int):
         """Bring title, tags and the control card in line with the database."""
@@ -659,6 +900,8 @@ class Tickets(commands.Cog):
         rename_soon(thread, title_of(t, user.name if user else str(t["user_id"])))
         try:
             starter = await thread.fetch_message(thread.id)
+            if starter.flags.components_v2:
+                return await starter.edit(view=staff_card(t), allowed_mentions=discord.AllowedMentions.none())
             rest = starter.embeds
             if rest and rest[0].footer and (rest[0].footer.text or "").startswith(CARD_FOOTER[:20]):
                 rest = rest[1:]   # drop the old control card, keep profile + problem
@@ -667,6 +910,8 @@ class Tickets(commands.Cog):
             log.warning("control card: %s", e)
 
     async def send_to_user(self, t, e: discord.Embed, files=None, view=None) -> discord.Message | None:
+        if not e.author:   # every support DM carries the agent header
+            e.set_author(name=AGENT, icon_url=AGENT_ICON)
         try:
             user = self.bot.get_user(t["user_id"]) or await self.bot.fetch_user(t["user_id"])
             return await user.send(embed=e, files=files or [], view=view)
@@ -709,6 +954,10 @@ class Tickets(commands.Cog):
                                 view=rating_view(t["id"]))
         v = discord.ui.View(timeout=None)
         v.add_item(transcripts.ViewButton(t["id"]))
+        d = card_data(t["id"])
+        if t["first_reply"] and d and not d.get("matched") and db.kv_get(f"tlast:{t['id']}"):
+            v.add_item(SaveFixButton(t["id"]))
+        db.run("DELETE FROM kv WHERE key IN (?, ?)", f"tbot:{t['id']}", f"ticket_dev:{t['id']}")
         await log_staff(self.guild, f"✅ Ticket {t['id']:04d} · {topic_label(t['topic'])} · <@{t['user_id']}> "
                                     f"{who} · {saved} messages", kind="Tickets", view=v)
 
@@ -771,7 +1020,13 @@ class Tickets(commands.Cog):
         copy = await thread.send(embed=e, files=await self._files(msg))
         link_copy(msg, copy, t["id"], "member")
         await msg.add_reaction("✅")
-        db.run("UPDATE tickets SET status='open', last_activity=?, warned=0 WHERE id=?", db.now(), t["id"])
+        if t["status"] == "bot":
+            db.run("UPDATE tickets SET last_activity=? WHERE id=?", db.now(), t["id"])
+            if msg.content:
+                await self.helper_reply(t, msg.content)
+            return
+        db.run("UPDATE tickets SET status='open', last_activity=?, warned=0, handed=COALESCE(handed, ?) WHERE id=?",
+               db.now(), db.now(), t["id"])
         if t["status"] != "open":
             await self.refresh(t["id"])
 
@@ -781,6 +1036,8 @@ class Tickets(commands.Cog):
             return
         if t["status"] == "closed":
             return await msg.reply("This ticket is closed. The member won't see this.", mention_author=False)
+        if t["status"] == "bot":
+            await self.handoff(t, "taken over", by=msg.author)
         ok = await self.relay_staff(t, msg.author, msg.content, await self._files(msg), src=msg)
         await msg.add_reaction("✅" if ok else "❌")
         if not ok:
@@ -788,12 +1045,14 @@ class Tickets(commands.Cog):
 
     async def relay_staff(self, t, author: discord.Member, content: str, files, src=None) -> bool:
         e = embed(description=content[:4000] or "*(attachment)*", colour=discord.Colour(GREEN))
-        e.set_author(name=f"{author.display_name} · Support team", icon_url=author.display_avatar.url)
+        e.set_author(name=f"{author.display_name} · {AGENT}", icon_url=author.display_avatar.url)
         sent = await self.send_to_user(t, e, files)
         if not sent:
             return False
         if src is not None:
             link_copy(src, sent, t["id"], "staff")
+        if content:
+            db.kv_set(f"tlast:{t['id']}", content[:1200])   # pre-fills "Save fix as answer"
         now = db.now()
         db.run("UPDATE tickets SET status='waiting', last_activity=?, first_reply=COALESCE(first_reply, ?), "
                "claimed_by=COALESCE(claimed_by, ?) WHERE id=?", now, now, author.id, t["id"])
@@ -850,8 +1109,8 @@ class Tickets(commands.Cog):
             return
         now = db.now()
         team = role_named(self.guild, "Support Team")
-        for t in db.q("SELECT * FROM tickets WHERE status!='closed' AND first_reply IS NULL AND nudged=0 AND created<?",
-                      now - NUDGE_AFTER):
+        for t in db.q("SELECT * FROM tickets WHERE status NOT IN ('closed', 'bot', 'closing') AND first_reply IS NULL "
+                      "AND nudged=0 AND COALESCE(handed, created)<?", now - NUDGE_AFTER):
             thread = await self.fetch_thread(t["thread_id"])
             if thread:
                 await thread.send(f"⏰ No reply for 30 minutes. {team.mention if team else 'Support team'}, "
@@ -864,6 +1123,8 @@ class Tickets(commands.Cog):
             db.run("UPDATE tickets SET warned=1 WHERE id=?", t["id"])
         for t in db.q("SELECT * FROM tickets WHERE status='waiting' AND warned=1 AND last_activity<?", now - CLOSE_AFTER):
             await self.close(t, by=None, reason="auto-closed after 48 h without a reply")
+        for t in db.q("SELECT * FROM tickets WHERE status='bot' AND last_activity<?", now - WARN_AFTER):
+            await self.close(t, by=None, reason="closed, the member stopped answering the Support Agent")
         for t in db.q("SELECT * FROM tickets WHERE status='closing' AND last_activity<?", now - WARN_AFTER):
             await self.close(t, by=None, reason="closed, the member didn't answer within 24 h")
 

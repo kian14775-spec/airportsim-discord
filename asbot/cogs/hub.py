@@ -112,7 +112,7 @@ ACTIONS = [("announce", "Post an announcement", "announcements, dev-logs or soci
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
            ("member", "Look up a member", "Roblox link, tickets, strikes"),
            ("warn", "Warn a member", "Give a strike; timeouts happen by themselves"),
-           ("answers", "Instant answers", "See and remove saved answers"),
+           ("answers", "Instant answers", "Add, see and remove the helper's answers"),
            ("today", "Today's numbers", "Joins, visits, group, tickets so far today"),
            ("stats", "Support numbers", "This month's tickets and ratings"),
            ("health", "Bot health", "Latency and uptime")]
@@ -142,15 +142,10 @@ class StaffMenu(discord.ui.Select):
         if act == "warn":
             return await interaction.response.send_message("Who?", view=_private([WarnPick()]), ephemeral=True)
         if act == "answers":
+            from .answers import list_card
             rows = db.q("SELECT * FROM faq ORDER BY hits DESC, id DESC")
-            if not rows:
-                return await interaction.response.send_message(
-                    "No saved answers yet. Right-click a staff reply in a ticket → Apps → Save as instant answer.",
-                    ephemeral=True)
-            lines = [f"`#{r['id']}` **{r['keywords']}** · used {r['hits']}x\n{r['answer'][:90]}" for r in rows[:15]]
-            return await interaction.response.send_message(
-                embed=ui.card("Instant answers", "\n\n".join(lines)), view=_private([AnswerRemove(rows)]),
-                ephemeral=True)
+            items = [AddAnswerButton()] + ([AnswerRemove(rows)] if rows else [])
+            return await interaction.response.send_message(embed=list_card(), view=_private(items), ephemeral=True)
         if act == "stats":
             e = bot.get_cog("Tickets").stats_embed(dt.datetime.now(dt.timezone.utc))
             return await interaction.response.send_message(embed=e, ephemeral=True)
@@ -229,6 +224,15 @@ class WarnPick(discord.ui.UserSelect):
         if not member:
             return await interaction.response.send_message("They're not in the server.", ephemeral=True)
         await interaction.response.send_modal(StrikeModal(member))
+
+
+class AddAnswerButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Add an answer", style=discord.ButtonStyle.success)
+
+    async def callback(self, interaction: discord.Interaction):
+        from .answers import AnswerModal
+        await interaction.response.send_modal(AnswerModal())
 
 
 class AnswerRemove(discord.ui.Select):

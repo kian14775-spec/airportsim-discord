@@ -42,27 +42,28 @@ categories:
     top: true           # no section header: sits above everything
     channels:
       - key: welcome
-        name: rules-and-verify
-        was: [information, verify]
+        name: ︱ʀᴜʟᴇꜱ-ᴀɴᴅ-ᴠᴇʀɪꜰʏ
+        was: [rules-and-verify, information, verify]
         perms: welcome
         topic: Rules, verify and your roles. Start here.
 
   - key: news
-    name: STAY TUNED
+    name: AIRPORT SIMULATOR
+    was: [STAY TUNED]
     perms: readonly
     channels:
-      - {key: announcements, name: announcements, was: [news], type: announcement, topic: "Big news about Airport Simulator."}
-      - {key: devlogs, name: dev-logs, type: announcement, topic: "Changelogs, polls and sneak peeks."}
-      - {key: socials, name: socials, type: announcement, topic: "Our latest posts on social media."}
+      - {key: announcements, name: ︱ᴀɴɴᴏᴜɴᴄᴇᴍᴇɴᴛꜱ, was: [announcements, news], type: announcement, topic: "Big news about Airport Simulator."}
+      - {key: devlogs, name: ︱ᴅᴇᴠ-ʟᴏɢꜱ, was: [dev-logs], type: announcement, topic: "Changelogs, polls and sneak peeks."}
+      - {key: socials, name: ︱ꜱᴏᴄɪᴀʟꜱ, was: [socials], type: announcement, topic: "Our latest posts on social media."}
 
   - key: support
     name: HELP
     perms: readonly
     channels:
-      - {key: support, name: support, was: [support-center], topic: "Need help? Use the menu below."}
+      - {key: support, name: ︱ꜱᴜᴘᴘᴏʀᴛ, was: [support, support-center], topic: "Need help? Use the menu below."}
       - key: feedback
-        name: ideas-and-bugs
-        was: [feedback, suggestions]
+        name: ︱ɪᴅᴇᴀꜱ-ᴀɴᴅ-ʙᴜɢꜱ
+        was: [ideas-and-bugs, feedback, suggestions]
         type: forum
         perms: forum
         require_tag: true
@@ -74,24 +75,25 @@ categories:
     was: [TALK]
     perms: members
     channels:
-      - {key: chat,  name: general, was: [chat], slowmode: 3}
-      - {key: media, name: media, was: [screenshots], topic: "Screenshots and clips from the game"}
-      - {key: create_party, name: lounge, was: [Create Party], type: voice, perms: voice}
+      - {key: chat,  name: ︱ɢᴇɴᴇʀᴀʟ, was: [general, chat], slowmode: 3}
+      - {key: media, name: ︱ᴍᴇᴅɪᴀ, was: [media, screenshots], topic: "Screenshots and clips from the game"}
+      - {key: create_party, name: ︱ʟᴏᴜɴɢᴇ, was: [lounge, Create Party], type: voice, perms: voice}
 
   - key: hangar
     name: CREATE
     perms: forum
     channels:
       - key: liveries
-        name: liveries
+        name: ︱ʟɪᴠᴇʀɪᴇꜱ
+        was: [liveries]
         type: forum
         layout: gallery
         require_tag: true
         topic: Templates are in the pinned post. Share your liveries here.
         tags: [Template, Showcase, WIP]
       - key: rp_servers
-        name: rp-servers
-        was: [airlines]
+        name: ︱ʀᴘ-ꜱᴇʀᴠᴇʀꜱ
+        was: [rp-servers, airlines]
         type: forum
         require_tag: true
         topic: One post per airline or private server. Name, fleet, how to join.
@@ -102,16 +104,18 @@ categories:
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: staff-chat, was: [moderator-only]}
-      - {key: stats, name: stats, topic: "Live numbers on top, a daily report every day at midnight UTC."}
-      - {key: logs,         name: logs, was: [mod-logs]}
+      - {key: staff_chat,   name: ︱ꜱᴛᴀꜰꜰ-ᴄʜᴀᴛ, was: [staff-chat, moderator-only]}
+      - {key: stats, name: ︱ꜱᴛᴀᴛꜱ, was: [stats], topic: "Live numbers on top, a daily report every day at midnight UTC."}
+      - {key: logs,         name: ︱ʟᴏɢꜱ, was: [logs, mod-logs]}
       - key: inbox
-        name: inbox
+        name: ︱ɪɴʙᴏx
+        was: [inbox]
         type: forum
         topic: Every support ticket is a post here.
         tags: [Open, Claimed, Waiting, Urgent, Dev team, Appeal]
       - key: applications
-        name: applications
+        name: ︱ᴀᴘᴘʟɪᴄᴀᴛɪᴏɴꜱ
+        was: [applications]
         type: forum
         topic: Every staff application is a post here. Vote, discuss, then accept or deny.
         tags: [Pending, Accepted, Denied]

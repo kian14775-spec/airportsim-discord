@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -162,3 +164,43 @@ async def game_stats() -> dict | None:
 
 def ensure_list(x):
     return x if isinstance(x, list) else [x]
+
+
+NICK_AT = re.compile(r"@([A-Za-z0-9_]{3,20})")
+NICK_FIRST = re.compile(r"^([A-Za-z0-9_]{3,20})\b")
+
+
+async def linked_roblox(guild: discord.Guild, user: discord.abc.User) -> tuple[int, str, str] | None:
+    """(roblox_id, roblox_name, how) for the account a member verified with.
+    1. linked through this bot, 2. Bloxlink's API (needs BLOXLINK_KEY, free in Bloxlink's
+    dashboard), 3. their server nickname (Bloxlink renames verified members) checked on Roblox."""
+    from . import db
+    link = db.one("SELECT * FROM links WHERE discord_id=?", user.id)
+    if link:
+        return link["roblox_id"], link["roblox_name"], "verified"
+    key = os.getenv("BLOXLINK_KEY")
+    if key:
+        try:
+            async with http().get(f"https://api.blox.link/v4/public/guilds/{guild.id}/discord-to-roblox/{user.id}",
+                                  headers={"Authorization": key}) as r:
+                data = await r.json() if r.status == 200 else {}
+            rid = int(data.get("robloxID") or 0)
+            if rid:
+                info = await roblox_user(rid) or {}
+                name = info.get("name") or str(rid)
+                db.run("INSERT OR IGNORE INTO links VALUES(?, ?, ?, ?)", user.id, rid, name, db.now())
+                return rid, name, "verified with Bloxlink"
+        except (aiohttp.ClientError, ValueError, TimeoutError) as e:
+            log.warning("bloxlink lookup: %s", e)
+    member = guild.get_member(user.id)
+    verified = role(guild, "verified")
+    if member and verified and verified in member.roles and member.nick:
+        m = NICK_AT.search(member.nick) or NICK_FIRST.search(member.nick)
+        if m:
+            try:
+                found = await roblox_user_by_name(m.group(1))
+            except (aiohttp.ClientError, TimeoutError):
+                found = None
+            if found:
+                return found["id"], found["name"], "from their nickname"
+    return None
