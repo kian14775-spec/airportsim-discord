@@ -4,7 +4,7 @@
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve"
 (free plan = 1 project, reused), service "my-bot", volume "my-bot-volume" at /data (db, layout ids, templates,
 logs). Repo folder is `railway link`ed. NO copy runs on the PC.
-s19 (committed, NOT DEPLOYED yet, needs Kian's OK): Support Agent (rule-based DM helper, no AI, $0), /answer
+s19 LIVE 2026-10-26 (deployed, channels renamed, selftest 47/47): Support Agent (rule-based DM helper, no AI, $0), /answer
 add|list|edit|remove|test (trigger words + rough notes -> sentence), new Components-V2 staff ticket card with the
 verified Roblox account (bot link -> Bloxlink API if BLOXLINK_KEY -> nickname), "answer shown / none fits" flags,
 Save fix button + "save the fix" prompt on close, headset icon (assets/support_agent.png, uploaded as app emoji)
@@ -12,8 +12,7 @@ on support messages only, small-caps channel names in layout/server.yaml.
 RULE (Kian 2026-10-26): nothing may cost money or eat the Railway credit. No paid AI. asbot/ai.py polish is
 OFF unless a FREE-tier GEMINI_API_KEY is set (the game-factory key's project is prepaid + empty: don't use it).
 Next:
-1. `railway up --detach`, then `python layout.py apply` (16 channel renames to ︱small-caps), copy state/ids to
-   seed/state, deploy again; run tools/selftest.py; open a test ticket ("stuck loading") to see the Agent flow.
+1. Kian: open a test ticket ("stuck loading") to see the Support Agent flow + new staff card; tune answers
 2. Optional: BLOXLINK_KEY (free, Bloxlink dashboard > API) in Railway vars = exact verified account on tickets.
 3. Kian: Open Cloud key (group-owned, user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY -> deployailway_vars.ps1.
 4. Before 2026-12-01: Railway drops railway.json (config-as-code) -> run `railway config migrate`.
@@ -59,3 +58,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-26 s18b: STATS card revamp (grey ui.SLATE edge, amber/red only when tickets wait; title + "updated" line; divider between Tickets / Game / Community; totals as a table; short() = 12.3M). Daily report same style. Stats banner = ORIGINAL play7 runway shot (Kian: keep it, only fix text); make_banners panel now sizes to the subtitle too, so text never spills onto the photo.
 - 2026-10-26 s18c: ROLES TIDY-UP applied (Kian OK'd plan): deleted ARFF Commissioner, Leg, LOA, | Scheduled Flight |, Unverified. Order top->bottom: Founder, Owner, Co Owner, Admin, Airport Board, Developer, Server Moderator, Trial Moderator, Support Team, PR Team, QA, Star Program, Server Booster, Airport VIP, Livery of the Month, Traveler, PC/Mobile/Console/VR, 4 ping roles, Ticket Blacklisted. Staff colours warm->cool (#D9534F ... #8FBF7F); ping/platform roles no colour. Layout tool never reorders roles (done via API, script in session scratchpad). selftest 47/47.
 - 2026-10-26 s19: SUPPORT AGENT + easy instant answers + staff card V2 + Roblox account on tickets + headset icon (support only) + small-caps channels; offline sims pass; committed, deploy pending Kian's OK. Kian: no paid AI / no Railway credit use.
+- 2026-10-26 s19b: deployed (2 uploads; 2nd retried after timeouts), 16 channels renamed to ︱small-caps, seed state synced, selftest 47/47, app emoji support_agent + /answer registered.
