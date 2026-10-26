@@ -40,6 +40,9 @@ def _stem(w: str) -> str:
     return w
 
 
+stem = _stem
+
+
 def _hit(keyword: str, low: str, words: list[str]) -> bool:
     if keyword in low:
         return True

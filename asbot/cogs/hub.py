@@ -43,6 +43,12 @@ async def _roles(interaction: discord.Interaction):
                                             view=_private(items), ephemeral=True)
 
 
+async def _profile(interaction: discord.Interaction):
+    from .profile import profile_card
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    await interaction.followup.send(view=await profile_card(interaction.user), ephemeral=True)
+
+
 async def _support(interaction: discord.Interaction):
     await interaction.response.send_message("What do you need help with?",
                                             view=_private([TopicSelect(), AppealButton()]), ephemeral=True)
@@ -64,9 +70,10 @@ def help_card() -> cards.CardView:
     return cards.CardView(cards.container(
         cards.title("How can we help?", "Everything you can do here, in one place. Only you can see this."),
         cards.divider(),
-        cards.section("Your account", "**Verify** your Roblox account and set **your roles**."),
+        cards.section("Your account", "**Verify** your Roblox account, set **your roles** and see **your "
+                                      "profile** (show it off with `/profile`)."),
         cards.row(Do("Verify", start_verify, discord.ButtonStyle.success), Do("My roles", _roles),
-                  Do("Get support", _support, discord.ButtonStyle.primary)),
+                  Do("My profile", _profile), Do("Get support", _support, discord.ButtonStyle.primary)),
         cards.divider(),
         cards.section("The game", "Share an **idea**, report a **bug**, post **your airline** or grab a "
                                   "**livery template**."),

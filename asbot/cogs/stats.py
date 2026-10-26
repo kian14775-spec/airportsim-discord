@@ -106,6 +106,49 @@ def report_card(d: dt.date, start: dict, end: dict, partial: bool = False) -> ca
     return cards.CardView(cards.container(*parts, accent=ui.SLATE), timeout=600 if partial else None)
 
 
+def weekly_card(end: dt.date) -> cards.CardView:
+    """Monday report for the 7 UTC days before `end`: what support handled, what the Support Agent
+    solved alone, the top problems, which problems have no instant answer yet, and the slowest replies."""
+    a, b = day_bounds(end - dt.timedelta(days=7))[0], day_bounds(end - dt.timedelta(days=1))[1]
+    rows = db.q("SELECT * FROM tickets WHERE created BETWEEN ? AND ?", a, b)
+    cardd = {r["id"]: db.kv_get(f"tcard:{r['id']}", {}) for r in rows}
+    agent = sum(1 for r in rows if cardd[r["id"]].get("solved_by_agent"))
+    people = sum(1 for r in rows if r["first_reply"])
+    first = [r["first_reply"] - (r["handed"] or r["created"]) for r in rows if r["first_reply"]]
+    avg_first = f"{round(sum(first) / len(first) / 60)} min" if first else "-"
+    rated = [r["rating"] for r in rows if r["rating"]]
+    rating = f"{sum(rated) / len(rated):.1f}" if rated else "-"
+    tops: dict[str, int] = {}
+    for r in rows:
+        lbl = cardd[r["id"]].get("first") or "no instant answer"
+        tops[lbl] = tops.get(lbl, 0) + 1
+    top = "\n".join(f"**{n}x** {lbl}" for lbl, n in sorted(tops.items(), key=lambda x: -x[1])[:5]) or "No tickets."
+    gaps = [r for r in rows if not cardd[r["id"]].get("first")]
+    gap_text = ("\n".join(f"`{r['id']:04d}` {(cardd[r['id']].get('problem') or '-')[:70]}" for r in gaps[:5])
+                + "\n-# Turn the common ones into answers: `?answer words | fix` or **Save fix** on a ticket"
+                if gaps else "Every ticket had an instant answer.")
+    slow = sorted((r for r in rows if r["first_reply"]), key=lambda r: -(r["first_reply"] - (r["handed"] or r["created"])))
+    slow_text = "\n".join(f"`{r['id']:04d}` {round((r['first_reply'] - (r['handed'] or r['created'])) / 60)} min"
+                          + (f" · <@{r['claimed_by']}>" if r["claimed_by"] else "") for r in slow[:3]) or "-"
+    team = db.q("SELECT claimed_by, COUNT(*) n FROM tickets WHERE status='closed' AND closed BETWEEN ? AND ? "
+                "AND claimed_by IS NOT NULL GROUP BY claimed_by ORDER BY n DESC LIMIT 5", a, b)
+    team_text = " · ".join(f"<@{r['claimed_by']}> {r['n']}" for r in team) or "-"
+    parts = [
+        cards.title("Weekly support report", f"{end - dt.timedelta(days=7):%d %b} to {end - dt.timedelta(days=1):%d %b}"),
+        cards.divider(),
+        cards.section("Tickets", table([("Opened", len(rows)), ("Agent fixed", agent)],
+                                       [("To a person", people), ("1st reply", avg_first)],
+                                       [("Rating", rating)])),
+        cards.divider(),
+        cards.section("Top problems", top),
+        cards.section("No instant answer yet", gap_text),
+        cards.divider(),
+        cards.section("Slowest first replies", slow_text),
+        cards.section("Closed by", team_text),
+    ]
+    return cards.CardView(cards.container(*parts, accent=ui.SLATE))
+
+
 class Stats(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -150,6 +193,15 @@ class Stats(commands.Cog):
                 except discord.HTTPException as e:
                     log.warning("daily report: %s", e)
                 db.kv_set(f"reported:{ykey}", True)
+        week = f"{d:%G-W%V}"
+        if db.kv_get("weekly_report") is None:   # first run: start next Monday (no Support Agent data before)
+            db.kv_set("weekly_report", week)
+        if d.weekday() == 0 and db.kv_get("weekly_report") != week:   # Monday: last week's support report
+            try:
+                await out.send(view=weekly_card(d), allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException as e:
+                log.warning("weekly report: %s", e)
+            db.kv_set("weekly_report", week)
         await self.update_live(out, snap)
 
     async def update_live(self, out, snap: dict):

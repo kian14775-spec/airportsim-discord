@@ -29,7 +29,7 @@ from ..core import (cfg, channel, embed, is_staff, linked_roblox, log, log_staff
                     roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
 from .. import cards, faq, ticketlist, transcripts, ui
-from .answers import AnswerModal, guess_keywords
+from .answers import STOPWORDS, AnswerModal, guess_keywords
 
 NOTE_PREFIX = "//"
 from ..ui import BAD as RED, BRAND as BLUE, GOOD as GREEN, QUIET as GREY, WAIT as AMBER
@@ -66,6 +66,25 @@ def is_command(text: str) -> bool:
     """`?close`, `?claim` ... are staff commands (asbot/cogs/staffcmds.py), never relayed to the member."""
     from .staffcmds import COMMANDS
     return text.startswith("?") and text[1:].split(" ", 1)[0].lower() in COMMANDS
+
+
+def known_issue(text: str) -> str | None:
+    """A known issue from the support card (/staff -> Known issues) that the member's text talks about."""
+    from .news import status
+    words = {faq.stem(w) for w in faq.WORD.findall(text.lower())}
+    for issue in status().get("issues", []):
+        keys = {faq.stem(w) for w in faq.WORD.findall(issue.lower()) if len(w) > 3 and w not in STOPWORDS}
+        if keys and len(keys & words) >= min(2, len(keys)):
+            return issue
+    return None
+
+
+def issue_reply(issue: str) -> str:
+    from .news import status
+    nxt = status().get("next_update")
+    return (f"Good news, we already know about this one: **{issue}**\n\nThe team is working on a fix"
+            + (f" (next update: {nxt})" if nxt else "") + ". You don't need to do anything, and we'll post in "
+            "announcements when it's fixed. Is that what you're seeing?")
 
 
 def card_data(tid: int) -> dict:
@@ -197,6 +216,13 @@ def member_text(p: dict, past: int) -> str:
     return "\n".join(lines)
 
 
+def suggestion(t, d: dict) -> dict | None:
+    """Best instant answer a person could send in one click (not while the agent is on, not one it tried)."""
+    if t["status"] in ("bot", "closing", "closed") or d.get("suggest_sent"):
+        return None
+    return faq.match(f"{d.get('problem', '')} {d.get('extra', '')}", skip=set(d.get("tried") or []))
+
+
 def staff_card(t) -> discord.ui.LayoutView:
     """The one card on top of every ticket post: state, member, problem, helper line, buttons."""
     dot, words, colour = state_of(t)
@@ -218,12 +244,17 @@ def staff_card(t) -> discord.ui.LayoutView:
     row2 = []
     if t["status"] == "bot":
         row2.append(TicketButton("takeover", t["id"]))
+    sug = suggestion(t, d)
+    if sug:
+        row2.append(TicketButton("suggest", t["id"]))
     row2.append(TicketButton("save", t["id"]))
     if t["topic"] == "appeal":
         row2.append(TicketButton("unban", t["id"]))
     if past:
         row2.append(transcripts.HistoryButton(t["user_id"], past))
     notes = [n for n in (d.get("helper"), d.get("flag")) if n]
+    if sug:
+        notes.append(f"-# 💡 Suggested fix: {faq.label(sug)} · **Send suggested fix** sends it as you")
     view = cards.CardView(cards.container(
         head,
         cards.divider(),
@@ -253,6 +284,7 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
               "unban": ("Unban in game", discord.ButtonStyle.success),
               "uclose": ("Close my ticket", discord.ButtonStyle.secondary),
               "save": ("Save fix as answer", discord.ButtonStyle.secondary),
+              "suggest": ("Send suggested fix", discord.ButtonStyle.success),
               "takeover": ("Take over", discord.ButtonStyle.primary)}
 
     def __init__(self, action: str, tid: int):
@@ -277,6 +309,16 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
         member = cog.guild.get_member(interaction.user.id)
         if not member or not is_staff(member):
             return await interaction.response.send_message("Staff only.", ephemeral=True)
+        if self.action == "suggest":
+            sug = suggestion(t, card_data(t["id"]))
+            if not sug:
+                return await interaction.response.send_message("No suggestion for this one any more.", ephemeral=True)
+            await interaction.response.send_message(f"{member.mention} sent {faq.label(sug)}:\n>>> {sug['answer']}",
+                                                    allowed_mentions=discord.AllowedMentions.none())
+            set_card(t["id"], suggest_sent=True)
+            if await cog.relay_staff(t, member, sug["answer"], []):
+                faq.counted(sug)
+            return
         if self.action == "save":
             d = card_data(t["id"])
             last = db.kv_get(f"tlast:{t['id']}", "")
@@ -403,9 +445,10 @@ class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rat
         await log_staff(cog.guild, f"Ticket {self.tid:04d} rated {'★' * self.score} by the member", kind="Tickets")
 
 
-class AssistButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:ta:(?P<id>\d+):(?P<ans>fixed|not|human)"):
+class AssistButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:ta:(?P<id>\d+):(?P<ans>fixed|not|human|known)"):
     """The member's buttons under a support helper suggestion (in their DMs)."""
     LABELS = {"fixed": ("That fixed it", discord.ButtonStyle.success),
+              "known": ("Yes, that's it", discord.ButtonStyle.success),
               "not": ("Still broken", discord.ButtonStyle.secondary),
               "human": ("Talk to a person", discord.ButtonStyle.secondary)}
 
@@ -430,7 +473,7 @@ class AssistButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
         except discord.HTTPException:
             pass
         await cog.member_said(t, self.LABELS[self.ans][0])
-        if self.ans == "fixed":
+        if self.ans in ("fixed", "known"):
             await cog.helper_fixed(t)
         elif self.ans == "not":
             await cog.helper_next(t, "")
@@ -726,7 +769,12 @@ class Tickets(commands.Cog):
             return await interaction.followup.send("Support isn't set up yet. Try again later.", ephemeral=True)
         hcfg = cfg()["support"].get("helper", {})
         found = faq.match(f"{text} {extra}")
-        helping = bool(found and topic_key in hcfg.get("topics", []))
+        issue = known_issue(f"{text} {extra}") if topic_key in ("help", "bug", "other") else None
+        helping = bool((found or issue) and topic_key in hcfg.get("topics", []))
+        first_id = "issue" if issue else (found["id"] if found else None)
+        first_text = issue_reply(issue) if issue else (found["answer"] if found else "")
+        first_label = (f'known issue "{issue}"' if issue
+                       else (f"instant answer {faq.label(found)}" if found else None))
         now = db.now()
         tid = db.run("INSERT INTO tickets(user_id, topic, status, created, last_activity, handed) "
                      "VALUES(?, ?, ?, ?, ?, ?)", user.id, topic_key, "bot" if helping else "open", now, now,
@@ -734,13 +782,14 @@ class Tickets(commands.Cog):
         label = topic_label(topic_key)
         pos, eta = queue_position(tid), eta_minutes()
         if helping:
-            db.kv_set(f"tbot:{tid}", {"shown": [found["id"]], "said": f"{text} {extra}", "tries": 1})
+            db.kv_set(f"tbot:{tid}", {"shown": [first_id], "said": f"{text} {extra}", "tries": 1})
             first = (user.display_name or "there").split()[0]
-            parts = [cards.title(f"Ticket {tid:04d} · {label}",
-                                 f"Hiya {first}! I'm the Support Agent. I think I know this one:"),
+            intro = "Thanks for telling us." if issue else "I think I know this one:"
+            buttons = ("known", "not", "human") if issue else ("fixed", "not", "human")
+            parts = [cards.title(f"Ticket {tid:04d} · {label}", f"Hiya {first}! I'm the Support Agent. {intro}"),
                      cards.divider(),
-                     cards.text(found["answer"][:1800]),
-                     cards.row(*[AssistButton(tid, a) for a in ("fixed", "not", "human")]),
+                     cards.text(first_text[:1800]),
+                     cards.row(*[AssistButton(tid, a) for a in buttons]),
                      cards.divider(),
                      cards.small("Not it? Reply here in your own words, or press Talk to a person. "
                                  "The team can see this chat.")]
@@ -766,7 +815,7 @@ class Tickets(commands.Cog):
                 "then try again.", ephemeral=True)
         helper, flag = None, None
         if helping:
-            helper = (HELPER_ON + f"\n-# Sent instant answer {faq.label(found)}")
+            helper = HELPER_ON + f"\n-# Sent {first_label}"
         elif found:
             flag = (f"-# ⚡ Instant answer {faq.label(found)} fits this, but {label.lower()} tickets always go "
                     "to a person.")
@@ -783,14 +832,14 @@ class Tickets(commands.Cog):
                 extra = (extra + "\n" if extra else "") + f"**Ban on record:** {rec}"
         profile = await gather_profile(self.guild, user, username or None)
         db.kv_set(f"tcard:{tid}", {"problem": text, "extra": extra, "profile": profile, "helper": helper,
-                                   "flag": flag, "matched": bool(found)})
+                                   "flag": flag, "matched": bool(found or issue), "first": first_label})
         t = ticket(tid)
         tags = [tg for tg in inbox.available_tags if tg.name in tag_names(t)]
         made = await inbox.create_thread(name=title_of(t, user.name), view=staff_card(t), applied_tags=tags,
                                          allowed_mentions=discord.AllowedMentions.none())
         db.run("UPDATE tickets SET thread_id=? WHERE id=?", made.thread.id, tid)
         if helping:
-            await self.helper_note(made.thread, found["answer"], f"Sent instant answer {faq.label(found)}")
+            await self.helper_note(made.thread, first_text, f"Sent {first_label}")
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
         await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
                                     + (" · Support Agent on it" if helping else ""), kind="Tickets")
@@ -826,15 +875,18 @@ class Tickets(commands.Cog):
         entry = next((e for e in faq.entries() if e["id"] == last), None)
         faq.counted(entry)
         db.kv_set("triage_solved", db.kv_get("triage_solved", 0) + 1)
+        set_card(t["id"], solved_by_agent=True)
         db.run("UPDATE tickets SET status='closing', last_activity=? WHERE id=?", db.now(), t["id"])
         db.run("DELETE FROM kv WHERE key=?", f"tbot:{t['id']}")
-        set_card(t["id"], helper=f"✅ **Instant answer fixed it** ({faq.label(entry) if entry else 'answer'}). "
+        what = "Known issue confirmed" if last == "issue" else "Instant answer fixed it"
+        set_card(t["id"], helper=f"✅ **{what}** ({faq.label(entry) if entry else 'known issue'}). "
                                  "Asked the member to close.")
         v = discord.ui.View(timeout=None)
         v.add_item(ConfirmClose(t["id"], "yes"))
         v.add_item(ConfirmClose(t["id"], "no"))
-        await self.helper_say(ticket(t["id"]), "No worries, glad that sorted it! Are you happy for this ticket to "
-                                               "be closed?", view=v, what="Asked to close")
+        text = ("Thanks for letting us know! The fix is on its way. Are you happy for this ticket to be closed?"
+                if last == "issue" else "No worries, glad that sorted it! Are you happy for this ticket to be closed?")
+        await self.helper_say(ticket(t["id"]), text, view=v, what="Asked to close")
         await self.refresh(t["id"])
 
     async def helper_next(self, t, said: str):
@@ -861,6 +913,7 @@ class Tickets(commands.Cog):
             return
         now = db.now()
         db.run("UPDATE tickets SET status='open', handed=?, nudged=0, last_activity=? WHERE id=?", now, now, t["id"])
+        set_card(t["id"], tried=[x for x in helper_state(t["id"]).get("shown", []) if x != "issue"])
         db.run("DELETE FROM kv WHERE key=?", f"tbot:{t['id']}")
         if by:
             set_card(t["id"], helper=f"👤 {by.mention} took over from the Support Agent.")

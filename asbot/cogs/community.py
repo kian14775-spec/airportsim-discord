@@ -9,7 +9,7 @@ from pathlib import Path
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from .. import cards, db, opencloud, ui
 from ..paths import DATA
@@ -86,6 +86,10 @@ class Community(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.add_view(PartyPanel())
+        self.contest_auto.start()
+
+    def cog_unload(self):
+        self.contest_auto.cancel()
 
     @property
     def guild(self) -> discord.Guild:
@@ -199,22 +203,25 @@ class Community(commands.Cog):
         await self.ensure_templates_post()
         await interaction.response.send_message(f"Template **{safe}** saved.", ephemeral=True)
 
-    async def contest_start(self, interaction: discord.Interaction):
+    async def start_contest(self, guild: discord.Guild) -> None:
         db.kv_set("contest_start", db.now())
-        forum = channel(interaction.guild, "liveries")
-        ann = channel(interaction.guild, "announcements")
+        db.kv_set("contest_month", f"{dt.datetime.now(dt.timezone.utc):%Y-%m}")
+        forum = channel(guild, "liveries")
+        ann = channel(guild, "announcements")
         text = (f"**Livery of the Month is open!** Post your livery in {forum.mention if forum else '#liveries'} "
-                f"with the **Showcase** tag. Vote with {star()} on your favourites. The winner gets added to the game.")
+                f"with the **Showcase** tag and vote with {star()} on your favourites. Voting closes at the end of "
+                "the month and the winner gets added to the game.")
         if ann:
             await ann.send(embed=embed("Livery of the Month", text))
-        await interaction.response.send_message("Contest started.", ephemeral=True)
+        await log_staff(guild, "Livery of the Month started", kind="Bot")
 
-    async def contest_end(self, interaction: discord.Interaction):
+    async def end_contest(self, guild: discord.Guild) -> str | None:
+        """Pick the Showcase post with the most stars since the start, give the winner role, announce it.
+        Returns the result text (None when no contest runs or nothing got votes)."""
         start = db.kv_get("contest_start")
-        forum = channel(interaction.guild, "liveries")
+        forum = channel(guild, "liveries")
         if not start or not isinstance(forum, discord.ForumChannel):
-            return await interaction.response.send_message("No contest running.", ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
+            return None
         since = dt.datetime.fromtimestamp(start, dt.timezone.utc)
         threads = list(forum.threads)
         async for th in forum.archived_threads(limit=200):
@@ -231,7 +238,7 @@ class Community(commands.Cog):
             if votes > best[0]:
                 best = (votes, th, starter.author)
         db.kv_set("contest_start", None)
-        board = interaction.guild.get_thread(db.kv_get("contest_board") or 0)
+        board = guild.get_thread(db.kv_get("contest_board") or 0)
         if board:   # the live top-5 post is done once the winner is out
             try:
                 await board.edit(pinned=False, archived=True, locked=True)
@@ -239,21 +246,55 @@ class Community(commands.Cog):
                 pass
         db.kv_set("contest_board", None)
         if not best[1]:
-            return await interaction.followup.send("No Showcase posts with votes.", ephemeral=True)
+            await log_staff(guild, "Livery of the Month ended without votes", kind="Bot")
+            return None
         votes, th, author = best
-        winner = interaction.guild.get_member(author.id) if author else None
-        win_role = role(interaction.guild, "livery_winner")
+        winner = guild.get_member(author.id) if author else None
+        win_role = role(guild, "livery_winner")
         if winner and win_role:
             for m in list(win_role.members):
                 await m.remove_roles(win_role, reason="new Livery of the Month")
             await winner.add_roles(win_role, reason="Livery of the Month")
+        if author:
+            db.kv_set(f"livery_wins:{author.id}", db.kv_get(f"livery_wins:{author.id}", 0) + 1)
         text = f"{winner.mention if winner else 'Unknown'} wins with **{th.name}** ({votes} {star()}). {th.jump_url}"
-        ann = channel(interaction.guild, "announcements")
+        ann = channel(guild, "announcements")
         if ann:
             await ann.send(embed=embed("Livery of the Month winner", text))
         await th.send(f"This livery won Livery of the Month with {votes} votes!")
-        await interaction.followup.send(f"Winner: {text}", ephemeral=True)
-        await log_staff(interaction.guild, f"Livery of the Month: {text} (add it to the game)", kind="Bot")
+        await log_staff(guild, f"Livery of the Month: {text} (add it to the game)", kind="Bot")
+        return text
+
+    async def contest_start(self, interaction: discord.Interaction):
+        await self.start_contest(interaction.guild)
+        await interaction.response.send_message("Contest started.", ephemeral=True)
+
+    async def contest_end(self, interaction: discord.Interaction):
+        if not db.kv_get("contest_start"):
+            return await interaction.response.send_message("No contest running.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        text = await self.end_contest(interaction.guild)
+        await interaction.followup.send(f"Winner: {text}" if text else "Ended. No Showcase posts with votes.",
+                                        ephemeral=True)
+
+    @tasks.loop(hours=1)
+    async def contest_auto(self):
+        """Runs by itself: on the 1st of each month (UTC) last month's contest ends and a new one starts.
+        Turn off with contest: {auto: false} in config/bot.yaml."""
+        if not cfg().get("contest", {}).get("auto", True) or not self.guild:
+            return
+        now = dt.datetime.now(dt.timezone.utc)
+        month = f"{now:%Y-%m}"
+        if now.day != 1 or db.kv_get("contest_month") == month:
+            return
+        db.kv_set("contest_month", month)   # first: never run twice, even if ending fails half-way
+        if db.kv_get("contest_start"):
+            await self.end_contest(self.guild)
+        await self.start_contest(self.guild)
+
+    @contest_auto.before_loop
+    async def _contest_ready(self):
+        await self.bot.wait_until_ready()
 
     # ---------- party voice ----------
     @commands.Cog.listener()

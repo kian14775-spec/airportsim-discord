@@ -67,6 +67,9 @@ support:
     fixed: This should be fixed now. Rejoin the game and let us know if it's still happening.
     closing: Since we haven't heard back, we'll close this ticket. Open a new one any time.
 
+contest:
+  auto: true   # Livery of the Month ends + restarts by itself on the 1st of each month (UTC)
+
 appeals:
   enabled: true
 
