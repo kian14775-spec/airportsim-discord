@@ -15,6 +15,7 @@ GOOD = 0x3BA55C      # done, accepted, online
 WAIT = 0xE0A33A      # waiting, pending, warnings
 BAD = 0xE5484D       # problems, denied, down
 QUIET = 0x80848E     # closed, archived
+SLATE = 0x4E5361     # calm grey edge for cards that match the dark banners
 
 TONES = {"neutral": NEUTRAL, "brand": BRAND, "good": GOOD, "wait": WAIT, "bad": BAD, "quiet": QUIET}
 

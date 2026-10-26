@@ -104,15 +104,15 @@ class News(commands.Cog):
         from .tickets import SupportCard
         s = status()
         name, colour = STATES.get(s["state"], STATES["ok"])
-        dot = {"ok": "🟢", "issues": "🟡", "down": "🔴", "maintenance": "🔵"}.get(s["state"], "🟢")
-        bits = [f"{dot} **{name}**"]
+        bits = [f"Game: **{name}**"]
         if self.players is not None:
             bits.append(f"{self.players:,} playing")
         bits.append(f"next update: {s.get('next_update') or 'not announced'}")
         body = "  ·  ".join(bits)
         if s["issues"]:
-            body += "\n**Known issues:** " + " · ".join(s["issues"])
-        await cards.post_card("support", channel(self.guild, "support"), SupportCard(body, colour),
+            body += "\nKnown issues: " + " · ".join(s["issues"])
+        accent = None if s["state"] == "ok" else colour   # grey when all is fine, colour only for problems
+        await cards.post_card("support", channel(self.guild, "support"), SupportCard(body, accent),
                               banners=("support",))
         await self._drop_old_status_panel()
 

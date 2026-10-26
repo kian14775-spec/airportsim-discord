@@ -466,21 +466,24 @@ class ApplyButton(discord.ui.Button):
 
 
 class SupportCard(cards.CardView):
-    """#support: banner, live game status, the topics, then the menu and buttons, all in one card."""
+    """#support: banner, steps, the topic menu, then appeals and applications. The edge is calm grey
+    and only turns amber or red when the game has problems."""
 
     def __init__(self, status_line: str = "", accent: int | None = None):
-        topic_lines = "\n".join(f"**{t['label']}** · {t.get('description', '')}" for t in cfg()["support"]["topics"])
         super().__init__(cards.container(
-            cards.title("Support", status_line or None),
+            cards.title("Support", "Stuck, found a bug, or missing a purchase? We'll sort it out."),
+            cards.small(status_line) if status_line else None,
             cards.divider(),
-            cards.section("How it works", "Pick a topic and describe the problem. You'll often get an answer "
-                                          "straight away. If not, a ticket opens and the team replies in your DMs."),
-            cards.section("Topics", topic_lines),
-            cards.divider(),
+            cards.text("**1.** Pick a topic below\n"
+                       "**2.** Describe the problem in a sentence or two\n"
+                       "**3.** Get an instant answer, or a ticket opens and the team replies in your DMs"),
             cards.row(TopicSelect()),
+            cards.divider(),
+            cards.section("Something else", "Banned in game and think it was a mistake? Want to join the team?"),
             cards.row(AppealButton(), ApplyButton()),
+            cards.divider(),
             cards.small("Keep DMs from server members on, and please don't DM staff directly."),
-            accent=accent if accent is not None else ui.BRAND, banner_name="support"))
+            accent=accent if accent is not None else ui.SLATE, banner_name="support"))
 
 
 class Tickets(commands.Cog):

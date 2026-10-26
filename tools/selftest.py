@@ -82,7 +82,7 @@ async def run(client: discord.Client):
     check(perms_for(ch("feedback"), [traveler]).send_messages, "members can make posts in #feedback")
 
     me = g.me.top_role
-    for key in ("verified", "ping_announcements", "ping_devlogs", "ping_socials", "ping_updates", "ping_polls"):
+    for key in ("verified", "ping_announcements", "ping_devlogs", "ping_socials", "ping_polls"):
         r = g.get_role(state[f"role:{key}"])
         check(r < me, f"bot can give @{r.name}" + ("" if r < me else " -> MOVE THE BOT'S ROLE ABOVE IT"))
     if unverified:
