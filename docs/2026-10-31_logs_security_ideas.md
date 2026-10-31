@@ -1,6 +1,6 @@
 # Discord: logs + security revamp, server check, new ideas (2026-10-31)
 
-## 1. What's built (code done + tested, waits for deploy)
+## 1. What's built (LIVE since 2026-10-31, selftest 54/54)
 
 **Logs** - the #logs channel with threads is replaced by a **LOGS** category (staff can read, only the bot posts):
 
@@ -30,10 +30,11 @@ Every card: member name + avatar on top, what happened, "by @staff · reason", i
 2. **Role `*` (Administrator, 3 people) is above the bot** - if one of those accounts gets hacked, nothing can stop it. Drag the bot's role to the very top.
 3. **37 invites**, most made by random members, never expiring; the main one (3,216 uses) points at #staff-chat. Turn off Create Invite for members, keep 1-2 official invites pointing at rules-and-verify.
 4. **Webhook "Airport Firefighting Simulator" in #announcements** (made by minwww) - anyone with its URL can post @everyone there. Delete it if it's not used.
-5. **AutoMod** alerts go to #staff-chat, mention spam limit is 20, the name filter is off (it had "in"/"my" in it, which matched everyone), one word has a pasted @mention glued on. `tools/automod_setup.py apply` fixes all of it and adds Server invites (allowed in rp-servers) + Scam links rules.
+5. ~~AutoMod~~ **DONE**: alerts now go to #mod-logs, name filter cleaned + on, @mention typo fixed, new Server invites (allowed in rp-servers) + Scam links rules. Only "Block Mention Spam" (made by an old app in 2022) refuses edits through the API: the bot now times out 8+ pings itself, or set its limit to 8 in Server Settings > AutoMod.
 6. **Deleted roles came back**: ARFF Commissioner (1 member), Leg (1), Unverified (0).
-7. **ARCHIVE** still has 15 old ticket-#### channels (transcripts already live in the bot).
-8. **Layout drift**: someone changed perms on dev-logs, general, media and the Livery of the Month colour by hand. Keep (I add them to the layout) or revert?
+7. **ARCHIVE** still has 15 old ticket-#### channels from the old Ticket Tool bot (NOT in the bot's transcripts). Backed up to the bot repo `backups/cleanup_2026-10-31/`; delete on your OK.
+8. **Layout drift**: someone set #general/#media perms by hand (booster perks; it also blocked ALL slash commands for verified members there, which is why /help "didn't work" - FIXED, commands allowed again), a user is blocked from dev-logs, and the Livery of the Month colour changed. A full layout apply would undo these: keep them (add to the layout) or revert?
+9. ~~Old #logs~~ **DELETED** (23,626 messages backed up in `backups/cleanup_2026-10-31/`).
 
 ## 3. New systems (automated, minimal, nothing to click)
 
