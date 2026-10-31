@@ -80,7 +80,7 @@ def help_card() -> cards.CardView:
         cards.row(Do("Suggest an idea", lambda i: i.response.send_modal(FeedbackModal("Suggestion"))),
                   Do("Report a bug", lambda i: i.response.send_modal(FeedbackModal("Bug"))),
                   Do("My airline post", _airline), Do("Livery templates", _templates)),
-        accent=ui.BRAND, banner_name="help"), timeout=900)
+        accent=ui.BRAND, banner_name="help"), timeout=None)   # members often click long after opening it
 
 
 class AppealButton(discord.ui.Button):

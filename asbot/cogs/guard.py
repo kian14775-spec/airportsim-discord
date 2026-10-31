@@ -118,7 +118,7 @@ def gs() -> dict:
         "protect_pings": g.get("protect_pings", []),
         "raid": {"joins": 10, "seconds": 60, "new_joins": 6, "new_days": 7, "new_seconds": 300,
                  "lockdown_minutes": 30, **(g.get("raid") or {})},
-        "spam": {"messages": 6, "seconds": 6, "repeats": 3, "repeat_seconds": 60, "channels": 3,
+        "spam": {"messages": 6, "seconds": 6, "repeats": 3, "repeat_seconds": 60, "channels": 3, "mentions": 8,
                  "timeout_minutes": 10, **(g.get("spam") or {})},
         "nuke": {"deletes": 3, "removals": 5, "seconds": 60, **(g.get("nuke") or {})},
     }
@@ -272,7 +272,10 @@ class Guard(commands.Cog):
             return await self.punish(m.author, why, msgs)
         if scam:
             return await self.punish(m.author, scam[0], [m])
-        burst = [x[1] for x in h if now - x[0] <= s["seconds"]]
+        pinged = len({u.id for u in m.mentions if u.id != m.author.id} | {r.id for r in m.role_mentions})
+        if pinged >= s["mentions"]:
+            return await self.punish(m.author, f"mass ping ({pinged} people/roles)", [m])
+        burst =[x[1] for x in h if now - x[0] <= s["seconds"]]
         if len(burst) >= s["messages"]:
             return await self.punish(m.author, f"{len(burst)} messages in {s['seconds']} s", burst)
         repeats = [x[1] for x in same if now - x[0] <= s["repeat_seconds"]]

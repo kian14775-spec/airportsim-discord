@@ -30,10 +30,10 @@ T = discord.AutoModRuleTriggerType
 ACT = discord.AutoModRuleActionType
 OWN_INVITES = ["discord.gg/x94F9TfFd4", "discord.gg/AzTRXmmjFB"]   # the server's own (most used) invites
 INVITES = r"(?i)(discord\.gg|discord(app)?\.com/invite|dsc\.gg)/[a-z0-9-]+"
-SCAMS = [r"(?i)free\s*(nitro|robux).{0,80}(https?://|www\.)",
-         r"(?i)(https?://|www\.).{0,120}free\s*(nitro|robux)",
-         r"(?i)(steam|nitro)\s*gift.{0,80}https?://",
-         r"(?i)@(everyone|here).{0,300}https?://"]
+SCAMS = [r"(?i)free\s*(nitro|robux).{0,40}(https?://|www\.)",   # Discord caps regex size: keep the gaps short
+         r"(?i)(https?://|www\.).{0,60}free\s*(nitro|robux)",
+         r"(?i)(steam|nitro)\s*gift.{0,40}https?://",
+         r"(?i)@(everyone|here).{0,60}https?://"]
 PROFILE_DROP = {"*look*", "*in*", "*my*", "*bio*"}
 
 
@@ -88,7 +88,10 @@ async def main(apply: bool):
             new = {"actions": acts + [alert(modlogs)]}
             plan.append(f"{r.name}: alerts -> #mod-logs")
         if new and apply:
-            await r.edit(**new, reason="Bot security setup: alerts to #mod-logs")
+            try:
+                await r.edit(**new, reason="Bot security setup: alerts to #mod-logs")
+            except discord.HTTPException as e:   # "Block Mention Spam" (made by an old app in 2022) answers 404
+                plan.append(f"{r.name}: Discord refused the edit ({e.status}), change it in Server Settings > AutoMod")
 
     for name, trig, msg, exempt_ch in (
             ("Server invites", discord.AutoModTrigger(type=T.keyword, regex_patterns=[INVITES], allow_list=OWN_INVITES),

@@ -92,6 +92,10 @@ async def _decisions():
     assert len(calls) == n
     await cog.check(msg(NS(id=6), 10, "@everyone free nitro https://dlscord-gift.com"))
     assert calls[-1][0] == "hacked"
+    pings = msg(NS(id=7), 10, "hey all")
+    pings.mentions = [NS(id=i) for i in range(100, 109)]
+    await cog.check(pings)
+    assert calls[-1] == ("punish", "mass ping (9 people/roles)", 1), calls
     cog.tick.cancel()
 
 

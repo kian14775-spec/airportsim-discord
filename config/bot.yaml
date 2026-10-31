@@ -109,7 +109,7 @@ guard:
   alert_roles: [Admin, Server Moderator]   # pinged in security-logs for raids, hacked accounts and nukes only
   protect_pings: [Founder, Owner, Co Owner, Admin, Airport Board, Developer]   # members get a "use support" nudge
   raid:  {joins: 10, seconds: 60, new_joins: 6, new_days: 7, new_seconds: 300, lockdown_minutes: 30}
-  spam:  {messages: 6, seconds: 6, repeats: 3, repeat_seconds: 60, channels: 3, timeout_minutes: 10}
+  spam:  {messages: 6, seconds: 6, repeats: 3, repeat_seconds: 60, channels: 3, mentions: 8, timeout_minutes: 10}
   nuke:  {deletes: 3, removals: 5, seconds: 60}   # per person, then their dangerous roles are taken away
 
 # Logs (asbot/cogs/modlog.py)
