@@ -103,3 +103,17 @@ livery_contest:
 
 party:
   name_format: "{name}'s lounge"
+
+# Security (asbot/cogs/guard.py). Staff are never touched by the automatic parts.
+guard:
+  alert_roles: [Admin, Server Moderator]   # pinged in security-logs for raids, hacked accounts and nukes only
+  protect_pings: [Founder, Owner, Co Owner, Admin, Airport Board, Developer]   # members get a "use support" nudge
+  raid:  {joins: 10, seconds: 60, new_joins: 6, new_days: 7, new_seconds: 300, lockdown_minutes: 30}
+  spam:  {messages: 6, seconds: 6, repeats: 3, repeat_seconds: 60, channels: 3, timeout_minutes: 10}
+  nuke:  {deletes: 3, removals: 5, seconds: 60}   # per person, then their dangerous roles are taken away
+
+# Logs (asbot/cogs/modlog.py)
+logs:
+  keep_messages_days: 7    # text of recent messages, so deletes and edits always show what was said
+  keep_images_hours: 12    # copies of posted images/videos, posted again if the message is deleted
+  keep_images_mb: 150      # cap for those copies on the volume

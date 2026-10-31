@@ -67,39 +67,62 @@ def staff_only():
     return discord.app_commands.check(pred)
 
 
-# #logs has three threads; older names map onto them
-LOG_THREADS = {"Verifications": "Members", "Joins and leaves": "Members", "Members": "Members",
-               "Tickets": "Tickets and applications", "Applications": "Tickets and applications",
-               "Moderation": "Moderation", "Bot": "Moderation", "Messages": "Messages"}
+# Every kind of log has its own channel in the LOGS category (layout keys). Older kind
+# names map onto them, so callers can keep saying "Tickets" or "Joins and leaves".
+LOG_CHANNELS = {"Security": "log_security",
+                "Moderation": "log_mod",
+                "Members": "log_members", "Verifications": "log_members", "Joins and leaves": "log_members",
+                "Messages": "log_messages",
+                "Server": "log_server", "Bot": "log_server",
+                "Voice": "log_voice",
+                "Tickets": "log_tickets", "Applications": "log_tickets"}
 
 
-async def _log_thread(guild: discord.Guild, kind: str) -> discord.abc.Messageable | None:
-    """#logs is split into one thread per kind, made on first use."""
-    from . import db
-    ch = channel(guild, "logs")
-    if not isinstance(ch, discord.TextChannel):
+def log_channel(guild: discord.Guild, kind: str) -> discord.TextChannel | None:
+    ch = channel(guild, LOG_CHANNELS.get(kind, "log_server"))
+    return ch if isinstance(ch, discord.TextChannel) else None
+
+
+def log_card(title: str | None, body: str = "", *, tone: str = "neutral", user: discord.abc.User | None = None,
+             by: discord.abc.Snowflake | None = None, reason: str | None = None, image: str | None = None,
+             thumb: str | None = None) -> discord.Embed:
+    """One look for every log line: who it's about on top (name + avatar), what happened,
+    who did it and why, and their ids + the time at the bottom (searchable, copyable)."""
+    from . import ui
+    lines = [body] if body else []
+    if by is not None:
+        lines.append(f"-# by <@{by.id}>" + (f" · {reason[:300]}" if reason else ""))
+    elif reason:
+        lines.append(f"-# {reason[:300]}")
+    e = ui.card(title, "\n".join(lines) or None, tone=tone, footer=None, image=image, thumb=thumb)
+    ids = []
+    if user is not None:
+        e.set_author(name=f"{user.display_name} (@{user.name})" if user.display_name != user.name else user.name,
+                     icon_url=user.display_avatar.url)
+        ids.append(f"User {user.id}")
+    if by is not None and (user is None or by.id != user.id):
+        ids.append(f"By {by.id}")
+    e.set_footer(text=" · ".join(ids) or None)
+    e.timestamp = discord.utils.utcnow()
+    return e
+
+
+async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) -> discord.Message | None:
+    """Post to the log channel for `kind`. Plain text becomes a small card so every log
+    channel reads the same; callers can still pass their own embed/view/files."""
+    target = log_channel(guild, kind)
+    if target is None:
+        log.warning("no log channel for %s (layout key %s)", kind, LOG_CHANNELS.get(kind))
         return None
-    tid = db.kv_get(f"log_thread:{kind}")
-    th = guild.get_thread(tid) if tid else None
-    if th is None and tid:
-        try:
-            th = await guild.fetch_channel(tid)
-        except discord.HTTPException:
-            th = None
-    if th is None:
-        th = await ch.create_thread(name=kind, type=discord.ChannelType.public_thread,
-                                    auto_archive_duration=10080)
-        db.kv_set(f"log_thread:{kind}", th.id)
-    return th
-
-
-async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) -> None:
+    if text and "embed" not in kw and "embeds" not in kw:
+        kw["embed"] = log_card(None, text)
+        text = ""
     try:
-        target = await _log_thread(guild, LOG_THREADS.get(kind, "Moderation"))
-        if target:
-            await target.send(text or None, allowed_mentions=discord.AllowedMentions.none(), **kw)
+        return await target.send(text or None, allowed_mentions=kw.pop("allowed_mentions", discord.AllowedMentions.none()),
+                                 **kw)
     except discord.HTTPException as e:
-        log.warning("could not write to #logs (%s): %s", kind, e)
+        log.warning("could not write to %s (%s): %s", target, kind, e)
+        return None
 
 
 # ---- Roblox public web API (no key needed) ----

@@ -1,22 +1,29 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-10-26, s19)
-State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve"
-(free plan = 1 project, reused), service "my-bot", volume "my-bot-volume" at /data (db, layout ids, templates,
-logs). Repo folder is `railway link`ed. NO copy runs on the PC.
-s19 LIVE 2026-10-26 (deployed, channels renamed, selftest 47/47): Support Agent (rule-based DM helper, no AI, $0), /answer
-add|list|edit|remove|test (trigger words + rough notes -> sentence), new Components-V2 staff ticket card with the
-verified Roblox account (bot link -> Bloxlink API if BLOXLINK_KEY -> nickname), "answer shown / none fits" flags,
-Save fix button + "save the fix" prompt on close, headset icon (assets/support_agent.png, uploaded as app emoji)
-on support messages only. Small-caps channel names were tried and REVERTED (breaks channel search): plain names, no divider.
-RULE (Kian 2026-10-26): nothing may cost money or eat the Railway credit. No paid AI. asbot/ai.py polish is
-OFF unless a FREE-tier GEMINI_API_KEY is set (the game-factory key's project is prepaid + empty: don't use it).
+## RESUME HERE (2026-10-31, s21)
+State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve",
+service "my-bot", volume "my-bot-volume" at /data (54/500 MB). Repo folder is `railway link`ed. NO copy runs on the PC.
+Live code = deploy of 2026-10-29 (s20 + 7e6b543). RULE: nothing may cost money / eat the Railway credit, no paid AI.
+s21 (2026-10-31) LOGS + SECURITY REVAMP - code committed, NOT DEPLOYED (Kian's OK needed; deploy was held):
+- LOGS category CREATED LIVE (empty until deploy): security-logs, mod-logs, member-logs, message-logs, server-logs,
+  voice-logs, ticket-logs (layout keys log_*; perms preset `logs` = staff read-only). seed/state ids synced.
+- core.log_staff routes kinds -> channels (core.LOG_CHANNELS) as log_card()s (name+avatar, by @x · reason, ids).
+- modlog.py rewritten (messages w/ 7-day msglog store + image cache DATA/logcache, who-deleted via audit counts,
+  purge .txt, ghost pings; joins w/ invite used; leaves w/ roles; profile/boost; voice). auditlog.py = every audit
+  entry with actor + reason (own-bot actions skipped except layout). guard.py = spam/fake links/hacked accounts/
+  ping nudge/AutoMod escalation/raid lockdown (pause invites+DMs, /lockdown)/anti-nuke/setup check. securitylog.py removed.
+- tests/test_guard.py 7/7 (offline), all 17 cogs dry-load OK.
 Next:
-1. Kian: open a test ticket ("stuck loading") to see the Support Agent flow + new staff card; tune answers
-2. Optional: BLOXLINK_KEY (free, Bloxlink dashboard > API) in Railway vars = exact verified account on tickets.
-3. Kian: Open Cloud key (group-owned, user-restrictions r/w + DataStore r/w) -> .env ROBLOX_OPENCLOUD_KEY -> deployailway_vars.ps1.
-4. Before 2026-12-01: Railway drops railway.json (config-as-code) -> run `railway config migrate`.
-5. Later: remove Ticket Tool / Tickets v2 / Appy / Reaction Roles bots; in-game perks script (Studio).
+1. Kian OK -> `railway up --detach` (sandbox off) -> check `railway logs` for "online as" + a "Security setup check"
+   card (lists roles above the bot) -> `python tools/selftest.py` -> then DELETE the old #logs channel (Kian asked).
+2. Kian OK -> `python tools/automod_setup.py apply` (alerts -> mod-logs, mention 20->8 + timeout, name filter fixed+on,
+   new Server invites + Scam links rules). Preview with no args. Was held by the permission check.
+3. Kian decides the security gaps in docs/2026-10-31_logs_security_ideas.md (Trial Mod has ban, `*` role above bot,
+   37 member invites, webhook in announcements, re-made roles, layout drift on dev-logs/general/media perms) and
+   which new systems to build (top: live player count, update radar, Frequent Flyer trust tiers, verify nudge).
+4. Before 2026-12-01: `railway config migrate`. Open Cloud key still pending (perks, ban sync).
+NOTE: layout preview shows staff's manual perm edits on dev-logs/general/media + Livery colour: a full
+`layout apply` would REVERT them - ask Kian first (s21 created LOGS with a filtered apply instead).
 
 ## Deploying (Railway)
 - Code change: `railway up --detach` from the repo (CLI login lives in the real user profile; from Claude's
@@ -61,3 +68,6 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-26 s19b: deployed (2 uploads; 2nd retried after timeouts), 16 channels renamed to ︱small-caps, seed state synced, selftest 47/47, app emoji support_agent + /answer registered.
 - 2026-10-26 s19c: small-caps channel names reverted to plain (Kian: can't search them); applied, seed synced, deployed, selftest 47/47. Never use small-caps/fancy unicode in channel names again.
 - 2026-10-26 s20: ? staff commands (asbot/cogs/staffcmds.py, staff-only channels; ?help) + ticket list browser (asbot/ticketlist.py: Open/Closed/Mine/Search, Browse tickets button on inbox guide, /ticket list, /staff Tickets); ?delete = close without transcript (tdeleted kv). Committed; deploy waiting on Kian's OK.
+
+- 2026-10-29: NEW asbot/cogs/securitylog.py (raid alert, ban/timeout with moderator, invites, bot/webhook added, powerful role given, server/channel/emoji changes, voice) -> new #logs threads "Security" + "Server". Ban/unban/timeout logs moved out of verify.py. Compiled OK, NOT yet deployed (railway up).
+- 2026-10-31 s21: LOGS category (7 channels, created live) + modlog/auditlog/guard rewrite, AutoMod setup tool, server audit + ideas doc (docs/2026-10-31_logs_security_ideas.md). Committed; deploy + AutoMod apply + #logs delete wait on Kian's OK.

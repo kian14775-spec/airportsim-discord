@@ -13,7 +13,7 @@ import discord
 from discord.ext import commands
 
 from .. import cards, db, ui
-from ..core import (cfg, channel, embed, log_staff, role, role_named, roblox_headshot,
+from ..core import (cfg, channel, embed, log_card, log_staff, role, role_named, roblox_headshot,
                     roblox_user, roblox_user_by_name)
 from ..panels import drop_panel
 
@@ -79,8 +79,9 @@ async def finish_link(interaction: discord.Interaction, roblox_id: int, roblox_n
     if roles_ch:
         e.add_field(name="Next", value=f"Pick your ping roles in {roles_ch.mention}.", inline=False)
     await interaction.followup.send(embed=e, ephemeral=True)
-    await log_staff(member.guild, f"Verified {member.mention} as **{roblox_name}** (`{roblox_id}`)",
-                    kind="Verifications")
+    await log_staff(member.guild, "", kind="Verifications", embed=log_card(
+        "Verified", f"{member.mention} as [{roblox_name}](https://www.roblox.com/users/{roblox_id}/profile) (`{roblox_id}`)",
+        tone="good", user=member))
     await welcome_dm(member)
     interaction.client.dispatch("roblox_linked", member, roblox_id)
 
@@ -246,33 +247,7 @@ class Verify(commands.Cog):
         if link:   # rejoined: verified again straight away
             await apply_verified(member, link["roblox_id"], link["roblox_name"])
 
-    # ---------- staff log threads: joins/leaves and moderation ----------
-    @commands.Cog.listener("on_member_join")
-    async def _log_join(self, member: discord.Member):
-        age = (discord.utils.utcnow() - member.created_at).days
-        await log_staff(member.guild, f"📥 {member.mention} joined · account {age} days old"
-                                      + (" ⚠️ new account" if age < 7 else ""), kind="Joins and leaves")
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
-        await log_staff(member.guild, f"📤 {member} left", kind="Joins and leaves")
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
-        await log_staff(guild, f"🔨 {user} was banned", kind="Moderation")
-
-    @commands.Cog.listener()
-    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
-        await log_staff(guild, f"♻️ {user} was unbanned", kind="Moderation")
-
-    @commands.Cog.listener("on_member_update")
-    async def _log_timeout(self, before: discord.Member, after: discord.Member):
-        if before.timed_out_until != after.timed_out_until:
-            if after.timed_out_until:
-                await log_staff(after.guild, f"🔇 {after.mention} timed out until "
-                                             f"<t:{int(after.timed_out_until.timestamp())}:f>", kind="Moderation")
-            else:
-                await log_staff(after.guild, f"🔈 {after.mention} timeout removed", kind="Moderation")
+    # joins, leaves, bans and timeouts are logged in modlog.py / auditlog.py
 
 
 async def setup(bot):

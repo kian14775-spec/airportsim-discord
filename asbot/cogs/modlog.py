@@ -1,132 +1,347 @@
-"""Mod logs (replaces Circle): message edits/deletes, role and nickname changes, kicks,
-and channel/role changes, written to the #logs threads as short tidy cards.
+"""Logs (replaces Circle and Dyno): messages, members and voice, each in its own channel in
+the LOGS category. Staff actions (bans, roles, channels...) and who did them come from the
+audit log in auditlog.py.
 
-Noise left out on purpose: bots, the ticket inbox, the logs channel itself, and the
-lounge voice channels the bot makes and removes.
+message-logs  deleted messages (text from the cache or a 7-day store, images kept for a few
+              hours so they can be posted again), edits, purges (as a .txt), ghost pings
+member-logs   joins (account age, which invite), leaves (time in server, roles), names,
+              avatars, nicknames, boosts
+voice-logs    joins, leaves and moves
+
+Left out on purpose: bots, the ticket inbox (the bot mirrors DMs there) and the log
+channels themselves.
 """
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
+import io
+import re
+import time
+
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
-from .. import db, ui
-from ..core import channel, log_staff
+from .. import db
+from ..core import cfg, channel, log, log_card, log_staff
+from ..paths import DATA
 
+db.conn().executescript("""
+CREATE TABLE IF NOT EXISTS msglog (id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL, author_id INTEGER NOT NULL,
+    content TEXT NOT NULL, files TEXT NOT NULL DEFAULT '', mentions TEXT NOT NULL DEFAULT '', created REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS msglog_created ON msglog(created);
+""")
 
-def _skip_channel(guild: discord.Guild, ch) -> bool:
-    ignore = {getattr(channel(guild, k), "id", None) for k in ("inbox", "logs")}
-    parent = getattr(ch, "parent_id", None)
-    return getattr(ch, "id", None) in ignore or parent in ignore
-
-
-def _is_lounge(guild: discord.Guild, ch) -> bool:
-    hub = channel(guild, "create_party")
-    return bool(hub and isinstance(ch, discord.VoiceChannel) and ch.category_id == hub.category_id and ch.id != hub.id) \
-        or bool(db.one("SELECT 1 FROM parties WHERE channel_id=?", ch.id))
-
-
-def _quote(text: str, limit: int = 900) -> str:
-    text = (text or "").strip() or "*(no text)*"
-    return "> " + text[:limit].replace("\n", "\n> ")
+CACHE = DATA / "logcache"
+LOG_KEYS = ("log_security", "log_mod", "log_members", "log_messages", "log_server", "log_voice", "log_tickets")
+MAX_FILE = 8 * 1024 * 1024        # bots can upload 10 MB per message on an unboosted server
+GHOST_SECONDS = 120
 
 
-async def _card(guild, kind: str, title: str, body: str, tone: str = "neutral"):
-    await log_staff(guild, "", kind=kind, embed=ui.card(title, body, tone=tone, footer=None))
+def settings() -> dict:
+    return {"keep_messages_days": 7, "keep_images_hours": 12, "keep_images_mb": 150, **(cfg().get("logs") or {})}
+
+
+def skip_channel(guild: discord.Guild, ch) -> bool:
+    ignore = {getattr(channel(guild, k), "id", None) for k in ("inbox", *LOG_KEYS)} - {None}
+    return getattr(ch, "id", None) in ignore or getattr(ch, "parent_id", None) in ignore
+
+
+def quote(text: str | None, limit: int = 900) -> str:
+    text = (text or "").strip()
+    if not text:
+        return "-# (no text)"
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return "> " + text.replace("\n", "\n> ")
+
+
+def when(ts: float) -> str:
+    return f"<t:{int(ts)}:R>"
+
+
+def mention_ids(m: discord.Message) -> str:
+    """Who a message pinged, as 'u<id> r<id> e' (users, roles, everyone)."""
+    users = [f"u{u.id}" for u in m.mentions if not u.bot and u.id != m.author.id]
+    return " ".join(users + [f"r{r.id}" for r in m.role_mentions] + (["e"] if m.mention_everyone else []))
+
+
+def show_mentions(ids: str) -> str:
+    out = []
+    for tok in ids.split():
+        out.append("@everyone" if tok == "e" else f"<@{tok[1:]}>" if tok[0] == "u" else f"<@&{tok[1:]}>")
+    return " ".join(out)
+
+
+def safe_name(name: str) -> str:
+    return re.sub(r"[^\w.\-]", "_", name)[-80:]
+
+
+def kept_files(message_id: int) -> list:
+    return sorted(CACHE.glob(f"{message_id}_*"))
+
+
+def take_files(message_id: int) -> list[discord.File]:
+    """Saved copies of a deleted message's images, up to what one upload can carry."""
+    out, total = [], 0
+    for p in kept_files(message_id):
+        size = p.stat().st_size
+        if total + size <= 9.5 * 1024 * 1024 and len(out) < 10:
+            out.append(discord.File(p, filename=p.name.split("_", 2)[2]))
+            total += size
+    return out
 
 
 class ModLog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.del_counts: dict[int, int] = {}     # audit entry id -> deletes it counted
+        self.invites: dict[str, tuple[int, int | None]] = {}   # code -> (uses, inviter id)
+        self.joins: list[float] = []
+        CACHE.mkdir(parents=True, exist_ok=True)
+        self.prune.start()
 
-    # ---- messages ----
+    def cog_unload(self):
+        self.prune.cancel()
+
+    @tasks.loop(minutes=10)
+    async def prune(self):
+        s = settings()
+        db.run("DELETE FROM msglog WHERE created<?", time.time() - s["keep_messages_days"] * 86400)
+        files = sorted(CACHE.glob("*"), key=lambda p: p.stat().st_mtime)
+        cutoff, cap = time.time() - s["keep_images_hours"] * 3600, s["keep_images_mb"] * 1024 * 1024
+        total = sum(p.stat().st_size for p in files)
+        for p in files:
+            if p.stat().st_mtime < cutoff or total > cap:
+                total -= p.stat().st_size
+                p.unlink(missing_ok=True)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        g = self.bot.get_guild(self.bot.guild_id)
+        if g:
+            await self.load_invites(g)
+            await self.deleter(g, 0, 0)   # remember today's counts so old entries are never blamed
+
+    async def user(self, uid: int) -> discord.abc.User | discord.Object:
+        try:
+            return self.bot.get_user(uid) or await self.bot.fetch_user(uid)
+        except discord.HTTPException:
+            return discord.Object(uid)
+
+    # ---------- messages ----------
+    @commands.Cog.listener()
+    async def on_message(self, m: discord.Message):
+        if not m.guild or m.author.bot or skip_channel(m.guild, m.channel):
+            return
+        db.run("INSERT OR REPLACE INTO msglog VALUES(?, ?, ?, ?, ?, ?, ?)", m.id, m.channel.id, m.author.id,
+               m.content, "\n".join(a.filename for a in m.attachments), mention_ids(m), m.created_at.timestamp())
+        if m.attachments and settings()["keep_images_mb"] > 0:
+            asyncio.create_task(self.keep(m))
+
+    async def keep(self, m: discord.Message):
+        for i, a in enumerate(m.attachments[:10]):
+            if (a.content_type or "").split("/")[0] in ("image", "video") and a.size <= MAX_FILE:
+                try:
+                    await a.save(CACHE / f"{m.id}_{i}_{safe_name(a.filename)}")
+                except (discord.HTTPException, OSError) as e:
+                    log.warning("log cache %s: %s", m.id, e)
+
+    async def deleter(self, guild: discord.Guild, author_id: int, channel_id: int):
+        """Who deleted someone else's message, from the audit log (None = they did it
+        themselves). Discord folds repeat deletes into one entry and raises its count, so
+        counts are remembered between calls."""
+        found = None
+        try:
+            async for e in guild.audit_logs(limit=10, action=discord.AuditLogAction.message_delete):
+                count = getattr(e.extra, "count", 1) or 1
+                seen, self.del_counts[e.id] = self.del_counts.get(e.id), count
+                if found or getattr(e.target, "id", None) != author_id \
+                        or getattr(getattr(e.extra, "channel", None), "id", None) != channel_id:
+                    continue
+                fresh = (discord.utils.utcnow() - e.created_at).total_seconds() < 20
+                if (seen is None and fresh) or (seen is not None and count > seen):
+                    found = e.user or discord.Object(e.user_id)
+        except discord.HTTPException:
+            pass
+        return found
+
     @commands.Cog.listener()
     async def on_raw_message_delete(self, p: discord.RawMessageDeleteEvent):
         g = self.bot.get_guild(p.guild_id) if p.guild_id else None
-        if not g:
+        ch = g.get_channel_or_thread(p.channel_id) if g else None
+        if not ch or skip_channel(g, ch):
             return
-        ch = g.get_channel_or_thread(p.channel_id)
-        m = p.cached_message
-        if not ch or _skip_channel(g, ch) or (m and m.author.bot):
+        m, row = p.cached_message, db.one("SELECT * FROM msglog WHERE id=?", p.message_id)
+        if (m and m.author.bot) or (m is None and row is None):
             return
-        if m:
-            files = f"\n-# {len(m.attachments)} attachment(s)" if m.attachments else ""
-            await _card(g, "Messages", "Message deleted",
-                        f"{m.author.mention} in {ch.mention}\n{_quote(m.content)}{files}", "bad")
-        else:
-            await _card(g, "Messages", "Message deleted", f"In {ch.mention} (older message, text not available)", "bad")
+        author = m.author if m else (g.get_member(row["author_id"]) or await self.user(row["author_id"]))
+        content = m.content if m else row["content"]
+        names = [a.filename for a in m.attachments] if m else [n for n in row["files"].split("\n") if n]
+        created = m.created_at.timestamp() if m else row["created"]
+        pinged = mention_ids(m) if m else row["mentions"]
+        await asyncio.sleep(1.5)   # the audit log entry lands a moment after the delete
+        by = await self.deleter(g, author.id, ch.id)
+        ghost = bool(pinged) and by is None and time.time() - created < GHOST_SECONDS
+        body = f"<@{author.id}> in {ch.mention} · sent {when(created)}\n{quote(content)}"
+        if ghost:
+            body += f"\n**Pinged** {show_mentions(pinged)}"
+        files = take_files(p.message_id)
+        if names:
+            body += f"\n-# {len(names)} file(s): {', '.join(names)[:200]}" + (" · saved copies below" if files else "")
+        card = log_card("Ghost ping" if ghost else "Message deleted", body,
+                        tone="wait" if ghost else "bad" if by else "neutral",
+                        user=author if isinstance(author, (discord.User, discord.Member)) else None, by=by)
+        await log_staff(g, "", kind="Messages", embed=card, files=files)
+        for f in kept_files(p.message_id):
+            f.unlink(missing_ok=True)
 
     @commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, p: discord.RawBulkMessageDeleteEvent):
         g = self.bot.get_guild(p.guild_id) if p.guild_id else None
         ch = g.get_channel_or_thread(p.channel_id) if g else None
-        if ch and not _skip_channel(g, ch):
-            await _card(g, "Messages", "Messages purged", f"{len(p.message_ids)} messages in {ch.mention}", "bad")
-
-    @commands.Cog.listener()
-    async def on_message_edit(self, before: discord.Message, after: discord.Message):
-        if not after.guild or after.author.bot or before.content == after.content or _skip_channel(after.guild, after.channel):
+        if not ch or skip_channel(g, ch):
             return
-        await _card(after.guild, "Messages", "Message edited",
-                    f"{after.author.mention} in {after.channel.mention} · [jump]({after.jump_url})\n"
-                    f"**Before**\n{_quote(before.content, 450)}\n**After**\n{_quote(after.content, 450)}", "wait")
-
-    # ---- members ----
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        added = [r for r in after.roles if r not in before.roles]
-        removed = [r for r in before.roles if r not in after.roles]
+        ids = sorted(p.message_ids)
+        cached = {m.id: m for m in p.cached_messages}
+        rows = {r["id"]: r for r in db.q(f"SELECT * FROM msglog WHERE id IN ({','.join('?' * len(ids))})", *ids)}
         lines = []
-        if added:
-            lines.append("Added " + ", ".join(r.mention for r in added))
-        if removed:
-            lines.append("Removed " + ", ".join(r.mention for r in removed))
-        if before.nick != after.nick:
-            lines.append(f"Nickname **{before.nick or before.name}** → **{after.nick or after.name}**")
-        if lines:
-            await _card(after.guild, "Members", f"{after.display_name}", f"{after.mention}\n" + "\n".join(lines))
+        for mid in ids:
+            if mid in cached:
+                m = cached[mid]
+                files = "".join(f" [file: {a.filename}]" for a in m.attachments)
+                lines.append(f"[{m.created_at:%Y-%m-%d %H:%M}] {m.author} ({m.author.id}): {m.content}{files}")
+            elif mid in rows:
+                r = rows[mid]
+                stamp = dt.datetime.fromtimestamp(r["created"], dt.timezone.utc)
+                lines.append(f"[{stamp:%Y-%m-%d %H:%M}] {r['author_id']}: {r['content']}")
+            else:
+                lines.append(f"[older] message {mid} (text not stored)")
+            for f in kept_files(mid):
+                f.unlink(missing_ok=True)
+        await asyncio.sleep(1.5)
+        by = None
+        try:
+            async for e in g.audit_logs(limit=3, action=discord.AuditLogAction.message_bulk_delete):
+                if getattr(e.target, "id", None) == ch.id and (discord.utils.utcnow() - e.created_at).total_seconds() < 30:
+                    by = e.user or discord.Object(e.user_id)
+                    break
+        except discord.HTTPException:
+            pass
+        txt = discord.File(io.BytesIO("\n".join(lines).encode("utf-8")),
+                           filename=f"purge-{ch.name}-{dt.datetime.now(dt.timezone.utc):%Y%m%d-%H%M}.txt")
+        await log_staff(g, "", kind="Messages", file=txt,
+                        embed=log_card("Messages purged", f"**{len(ids)}** messages in {ch.mention} (all in the file)",
+                                       tone="bad", by=by))
 
     @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
-        try:   # a kick shows up in the audit log within a few seconds
-            async for e in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.kick):
-                if e.target and e.target.id == member.id and (discord.utils.utcnow() - e.created_at).total_seconds() < 15:
-                    await _card(member.guild, "Moderation", "Member kicked",
-                                f"{member} by {e.user.mention}" + (f"\n{_quote(e.reason, 300)}" if e.reason else ""),
-                                "bad")
-                    return
+    async def on_raw_message_edit(self, p: discord.RawMessageUpdateEvent):
+        m = p.message
+        if not m.guild or m.author.bot or skip_channel(m.guild, m.channel):
+            return
+        row = None if p.cached_message else db.one("SELECT content FROM msglog WHERE id=?", m.id)
+        before = p.cached_message.content if p.cached_message else (row["content"] if row else None)
+        if before is None or before == m.content:   # unknown old message, or only an embed loaded
+            return
+        db.run("UPDATE msglog SET content=?, mentions=? WHERE id=?", m.content, mention_ids(m), m.id)
+        await log_staff(m.guild, "", kind="Messages", embed=log_card(
+            "Message edited", f"{m.author.mention} in {m.channel.mention} · [jump]({m.jump_url})\n"
+                              f"**Before**\n{quote(before, 450)}\n**After**\n{quote(m.content, 450)}", user=m.author))
+
+    # ---------- members ----------
+    async def load_invites(self, g: discord.Guild):
+        try:
+            self.invites = {i.code: (i.uses or 0, i.inviter.id if i.inviter else None) for i in await g.invites()}
         except discord.HTTPException:
             pass
 
-    # ---- server structure ----
-    @commands.Cog.listener()
-    async def on_guild_channel_create(self, ch):
-        if not _is_lounge(ch.guild, ch):
-            await _card(ch.guild, "Moderation", "Channel created", f"{ch.mention} ({ch.type.name})")
+    async def used_invite(self, g: discord.Guild) -> tuple[str, int | None, int] | None:
+        old = dict(self.invites)
+        await self.load_invites(g)
+        for code, (uses, inviter) in self.invites.items():
+            if uses > old.get(code, (0, None))[0]:
+                return code, inviter, uses
+        gone = [c for c in old if c not in self.invites]   # a last-use invite disappears when used
+        return (gone[0], old[gone[0]][1], old[gone[0]][0] + 1) if len(gone) == 1 else None
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, ch):
-        if not _is_lounge(ch.guild, ch) and "lounge" not in ch.name.lower():
-            await _card(ch.guild, "Moderation", "Channel deleted", f"#{ch.name} ({ch.type.name})", "bad")
+    async def on_invite_create(self, invite: discord.Invite):
+        self.invites[invite.code] = (invite.uses or 0, invite.inviter.id if invite.inviter else None)
 
     @commands.Cog.listener()
-    async def on_guild_role_create(self, role: discord.Role):
-        await _card(role.guild, "Moderation", "Role created", role.mention)
+    async def on_invite_delete(self, invite: discord.Invite):
+        self.invites.pop(invite.code, None)
 
     @commands.Cog.listener()
-    async def on_guild_role_delete(self, role: discord.Role):
-        await _card(role.guild, "Moderation", "Role deleted", f"@{role.name}", "bad")
+    async def on_member_join(self, member: discord.Member):
+        g, now = member.guild, time.time()
+        self.joins = [t for t in self.joins if now - t < 30] + [now]
+        inv = await self.used_invite(g) if len(self.joins) <= 5 else None   # skip the lookups during a join wave
+        young = (discord.utils.utcnow() - member.created_at).days < 7
+        flagged = member.public_flags.spammer
+        lines = [f"{member.mention} · member {g.member_count:,}",
+                 f"Account made {when(member.created_at.timestamp())}" + (" · **new account**" if young else "")]
+        if inv:
+            lines.append(f"Invite `{inv[0]}`" + (f" from <@{inv[1]}>" if inv[1] else "") + f" · {inv[2]} uses")
+        if flagged:
+            lines.append("**Discord flags this account as a likely spammer**")
+        if member.bot:
+            lines.append("**Bot**")
+        await log_staff(g, "", kind="Members", embed=log_card(
+            "Joined", "\n".join(lines), tone="wait" if young or flagged else "neutral", user=member))
 
     @commands.Cog.listener()
-    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
-        changes = []
+    async def on_member_remove(self, member: discord.Member):
+        roles = [r.mention for r in reversed(member.roles) if not r.is_default()]
+        lines = [member.mention + (f" · joined {when(member.joined_at.timestamp())}" if member.joined_at else "")]
+        if roles:
+            lines.append("Roles " + " ".join(roles)[:900])
+        await log_staff(member.guild, "", kind="Members", embed=log_card("Left", "\n".join(lines), user=member))
+
+    @commands.Cog.listener()
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        g = self.bot.get_guild(self.bot.guild_id)
+        if after.bot or not g or not g.get_member(after.id):
+            return
+        lines = []
         if before.name != after.name:
-            changes.append(f"Name **{before.name}** → **{after.name}**")
-        if before.permissions != after.permissions:
-            changes.append("Permissions changed")
-        if before.colour != after.colour:
-            changes.append(f"Colour {before.colour} → {after.colour}")
-        if changes:
-            await _card(after.guild, "Moderation", "Role updated", f"{after.mention}\n" + "\n".join(changes))
+            lines.append(f"Username **{before.name}** → **{after.name}**")
+        if before.global_name != after.global_name:
+            lines.append(f"Display name **{before.global_name or '-'}** → **{after.global_name or '-'}**")
+        avatar = before.avatar != after.avatar
+        if avatar:
+            lines.append("New avatar →")
+        if lines:
+            await log_staff(g, "", kind="Members", embed=log_card(
+                "Profile changed", f"{after.mention}\n" + "\n".join(lines), user=after,
+                thumb=after.display_avatar.url if avatar else None))
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if before.premium_since != after.premium_since:
+            await log_staff(after.guild, "", kind="Members", embed=log_card(
+                "Boosted the server" if after.premium_since else "Stopped boosting", after.mention,
+                tone="good" if after.premium_since else "neutral", user=after))
+        if before.nick != after.nick:
+            await asyncio.sleep(3)   # changes with an audit entry are logged by auditlog.py (with who did it)
+            audit = self.bot.get_cog("AuditLog")
+            if not (audit and audit.saw(discord.AuditLogAction.member_update, after.id)):
+                await log_staff(after.guild, "", kind="Members", embed=log_card(
+                    "Nickname changed", f"{after.mention}\n**{before.nick or before.name}** → **{after.nick or after.name}**",
+                    user=after))
+
+    # ---------- voice ----------
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, m: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        if m.bot or before.channel == after.channel:
+            return
+        if before.channel is None:
+            text = f"joined **{after.channel.name}**"
+        elif after.channel is None:
+            text = f"left **{before.channel.name}**"
+        else:
+            text = f"moved **{before.channel.name}** → **{after.channel.name}**"
+        await log_staff(m.guild, "", kind="Voice", embed=log_card(None, f"{m.mention} {text}", user=m))
 
 
 async def setup(bot):

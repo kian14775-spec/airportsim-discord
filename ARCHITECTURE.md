@@ -25,13 +25,16 @@ Python 3.12 + discord.py, runs 24/7 on Railway (free plan, volume at /data).
 ## Features (`asbot/cogs/`)
 | File | Feature |
 |---|---|
-| `verify.py` | Welcome message (rules, Verify, role menus), Roblox verify, welcome DM, join/leave + mod logs |
+| `verify.py` | Welcome message (rules, Verify, role menus), Roblox verify, welcome DM |
 | `tickets.py` | DM tickets in #inbox: triage, control card, priority, timers, ask-to-close, /ticket |
 | `staffapps.py` | Staff applications forum |
 | `news.py` | Announcements composer, game status on the support card, player count |
 | `forums.py` | Ideas-and-bugs (votes, duplicates, digest), airlines (/rp), liveries contest board |
 | `community.py` | Feedback votes + "your idea shipped", templates, contest start/end, lounge voice, perks |
 | `hub.py` | /help (members), /staff (staff panel), live staff summary card |
+| `modlog.py` | Logs: messages (7-day text store, image copies, who deleted), members (invite used), voice -> LOGS channels |
+| `auditlog.py` | Every audit log entry (staff action + who + reason) -> mod/member/server/security/voice logs |
+| `guard.py` | Anti-spam, fake links, hacked accounts, staff-ping nudges, raid lockdown (/lockdown), anti-nuke, setup check |
 | `admin.py` | /layout preview / apply (admins) |
 | `health.py` | Watchdog restart, error replies |
 
@@ -42,6 +45,7 @@ Staff (hidden from members, need the "Timeout members" permission or an Integrat
 
 ## Rules for new code
 - Messages: `ui.card(...)` (or `core.embed`) only, never raw colours.
+- Logs: `core.log_staff(guild, text, kind=...)` or `embed=core.log_card(...)`; kinds map to the LOGS channels in `core.LOG_CHANNELS`.
 - Channels/roles: look up by layout key (`core.channel(guild, "inbox")`), never by name or id.
 - Long-lived buttons: persistent `custom_id` (`asbot:<feature>:...`), registered in the cog's `__init__`.
 - Deploy: `railway up --detach` from this folder. Layout changes: edit the yaml, `python layout.py apply`,
