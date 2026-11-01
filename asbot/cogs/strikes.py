@@ -13,7 +13,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import db, ui
+from .. import db, timeline, ui
 from ..core import channel, is_staff, log_staff
 
 db.conn().executescript("""
@@ -64,6 +64,7 @@ async def give_strike(interaction: discord.Interaction, member: discord.Member, 
         note += " (DMs closed)"
     await interaction.response.send_message(
         f"Strike {n} for {member.mention}: {step_text(n)}.{note}", ephemeral=True)
+    timeline.add(member.id, "staff", f"Strike {n} by {interaction.user.mention}: {reason}")
     extra = " · ⚠️ 4+ strikes: consider a ban" if n > len(STEPS) else ""
     await log_staff(member.guild, f"⚠️ Strike {n} for {member.mention} by {interaction.user.mention}: {reason}"
                                   f" → {step_text(n)}{extra}" + (f"\n> {context[:300]}" if context else ""),

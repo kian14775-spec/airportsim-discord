@@ -122,14 +122,10 @@ categories:
   - key: logs_cat
     name: LOGS
     perms: logs
-    channels:   # one channel per kind of log; the bot is the only one posting here
-      - {key: log_security, name: security-logs, topic: "Raids, lockdowns, scams, hacked accounts, bots, webhooks and admin permissions. Check this one first."}
-      - {key: log_mod,      name: mod-logs,      topic: "Bans, kicks, timeouts, strikes, AutoMod and auto-moderation, with who did it and why."}
-      - {key: log_members,  name: member-logs,   topic: "Joins (invite used, account age), leaves, verifies, roles, nicknames, names and avatars, boosts."}
-      - {key: log_messages, name: message-logs,  topic: "Deleted (with images) and edited messages, purges, ghost pings, pins."}
-      - {key: log_server,   name: server-logs,   topic: "Channels, roles, permissions, invites, emojis, threads, events and server settings, with who did it."}
-      - {key: log_voice,    name: voice-logs,    topic: "Voice joins, leaves, moves, and mutes or disconnects by staff."}
-      - {key: log_tickets,  name: ticket-logs,   topic: "Tickets, transcripts, ratings and staff applications."}
+    channels:   # needs action / what staff did / what members did; the bot is the only one posting here
+      - {key: log_security, name: alerts,   was: [security-logs], topic: "Needs action: raids, hacked accounts, nukes, bots, webhooks and dangerous permissions."}
+      - {key: log_mod,      name: actions,  was: [mod-logs], topic: "What staff did: bans, timeouts, strikes, roles, channels, permissions, closed tickets. Who and why."}
+      - {key: log_messages, name: activity, was: [message-logs], topic: "What members did: deleted and edited messages, purges, ghost pings, joins, leaves, boosts."}
 
 # Permission presets. Role names: @everyone, or any role key/name above.
 presets:

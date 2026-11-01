@@ -67,20 +67,31 @@ def staff_only():
     return discord.app_commands.check(pred)
 
 
-# Every kind of log has its own channel in the LOGS category (layout keys). Older kind
-# names map onto them, so callers can keep saying "Tickets" or "Joins and leaves".
+# Three log channels (layout keys): #alerts needs action, #actions is what staff did,
+# #activity is what members did. Callers say what a log is about; this says where it goes.
 LOG_CHANNELS = {"Security": "log_security",
-                "Moderation": "log_mod",
-                "Members": "log_members", "Verifications": "log_members", "Joins and leaves": "log_members",
-                "Messages": "log_messages",
-                "Server": "log_server", "Bot": "log_server",
-                "Voice": "log_voice",
-                "Tickets": "log_tickets", "Applications": "log_tickets"}
+                "Moderation": "log_mod", "Members": "log_mod", "Server": "log_mod", "Bot": "log_mod",
+                "Voice": "log_mod", "Tickets": "log_mod", "Applications": "log_mod",
+                "Messages": "log_messages", "Activity": "log_messages", "Verifications": "log_messages"}
+ALERT_HOURS = 24
 
 
 def log_channel(guild: discord.Guild, kind: str) -> discord.TextChannel | None:
-    ch = channel(guild, LOG_CHANNELS.get(kind, "log_server"))
+    ch = channel(guild, LOG_CHANNELS.get(kind, "log_mod"))
     return ch if isinstance(ch, discord.TextChannel) else None
+
+
+def log_off(event: str | None) -> bool:
+    """Is this log switched off? `logs: muted:` in config/bot.yaml, by event name."""
+    return bool(event) and event in ((cfg().get("logs") or {}).get("muted") or [])
+
+
+def note_alert(title: str | None) -> None:
+    """Remember an #alerts post for the live status card."""
+    from . import db
+    now = db.now()
+    kept = [a for a in db.kv_get("alerts:recent", []) if now - a[0] < ALERT_HOURS * 3600]
+    db.kv_set("alerts:recent", kept + [[now, title or "Alert"]])
 
 
 def log_card(title: str | None, body: str = "", *, tone: str = "neutral", user: discord.abc.User | None = None,
@@ -107,9 +118,12 @@ def log_card(title: str | None, body: str = "", *, tone: str = "neutral", user: 
     return e
 
 
-async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) -> discord.Message | None:
-    """Post to the log channel for `kind`. Plain text becomes a small card so every log
-    channel reads the same; callers can still pass their own embed/view/files."""
+async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", event: str | None = None,
+                    **kw) -> discord.Message | None:
+    """Post to the log channel for `kind`, unless `event` is switched off. Plain text becomes a
+    small card so every log channel reads the same; callers can still pass their own embed/view/files."""
+    if log_off(event):
+        return None
     target = log_channel(guild, kind)
     if target is None:
         log.warning("no log channel for %s (layout key %s)", kind, LOG_CHANNELS.get(kind))
@@ -117,6 +131,8 @@ async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", **kw) ->
     if text and "embed" not in kw and "embeds" not in kw:
         kw["embed"] = log_card(None, text)
         text = ""
+    if kind == "Security":
+        note_alert(getattr(kw.get("embed"), "title", None))
     try:
         return await target.send(text or None, allowed_mentions=kw.pop("allowed_mentions", discord.AllowedMentions.none()),
                                  **kw)

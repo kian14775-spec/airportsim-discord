@@ -106,7 +106,7 @@ party:
 
 # Security (asbot/cogs/guard.py). Staff are never touched by the automatic parts.
 guard:
-  alert_roles: [Admin, Server Moderator]   # pinged in security-logs for raids, hacked accounts and nukes only
+  alert_roles: [Admin, Server Moderator]   # pinged in #alerts for raids, hacked accounts and nukes only
   protect_pings: [Founder, Owner, Co Owner, Admin, Airport Board, Developer]   # members get a "use support" nudge
   raid:  {joins: 10, seconds: 60, new_joins: 6, new_days: 7, new_seconds: 300, lockdown_minutes: 30}
   spam:  {messages: 6, seconds: 6, repeats: 3, repeat_seconds: 60, channels: 3, mentions: 8, timeout_minutes: 10}
@@ -117,3 +117,31 @@ logs:
   keep_messages_days: 7    # text of recent messages, so deletes and edits always show what was said
   keep_images_hours: 12    # copies of posted images/videos, posted again if the message is deleted
   keep_images_mb: 150      # cap for those copies on the volume
+  keep_voice_days: 7       # voice history in the /staff member lookup
+  keep_history_days: 90    # everything else in the /staff member lookup
+  muted:                   # logs that don't post (remove a line to bring one back)
+    - profile              # names + avatars: still in the member lookup
+    - self_nick            # nicknames members set themselves: still in the member lookup
+    - voice_moves          # joins, leaves, moves: still in the member lookup
+    - verified
+    - ticket_opened
+    - ticket_claimed
+    - ticket_rated
+    - ticket_handover
+    - application_new      # the applications forum already shows these
+    - message_pin          # the rest are audit log actions
+    - message_unpin
+    - thread_update
+    - thread_delete
+    - invite_create
+    - invite_update
+    - invite_delete
+    - emoji_create
+    - emoji_update
+    - emoji_delete
+    - sticker_create
+    - sticker_update
+    - sticker_delete
+    - scheduled_event_create
+    - scheduled_event_update
+    - scheduled_event_delete

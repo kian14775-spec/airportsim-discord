@@ -3,7 +3,7 @@
     python tools/automod_setup.py          show what would change
     python tools/automod_setup.py apply    change it
 
-- every rule's alerts go to #mod-logs (they used to land in #staff-chat)
+- every rule's alerts go to #actions (they used to land in #staff-chat)
 - custom words: fixes an entry that had a pasted @mention glued to it
 - mention spam: 20 -> 8 mentions per message, plus a 10 min timeout and an alert
 - profile names: drops the one-word entries ('in', 'my', 'Look', 'bio') that matched almost
@@ -49,7 +49,7 @@ async def main(apply: bool):
     state = sync.load_state(g.id)
     modlogs, rp = state.get("ch:log_mod"), state.get("ch:rp_servers")
     if not modlogs:
-        sys.exit("No #mod-logs id in state/: create the LOGS channels first.")
+        sys.exit("No #actions id in state/: create the LOGS channels first.")
     roles = {r.name: r for r in await g.fetch_roles()}
     staff = [roles[n] for n in cfg().get("staff_role_names", []) if n in roles]
     rules = {r.name: r for r in await g.fetch_automod_rules()}
@@ -63,7 +63,7 @@ async def main(apply: bool):
             acts = [discord.AutoModRuleAction(type=ACT.block_message),
                     discord.AutoModRuleAction(duration=dt.timedelta(minutes=10)), alert(modlogs)]
             new = {"trigger": trig, "actions": acts}
-            plan.append(f"{r.name}: limit {r.trigger.mention_limit} -> 8, + 10 min timeout, alerts -> #mod-logs")
+            plan.append(f"{r.name}: limit {r.trigger.mention_limit} -> 8, + 10 min timeout, alerts -> #actions")
         elif r.trigger.type == T.keyword:
             words = [("beaner" if "beaner" in w and "<@" in w else w) for w in r.trigger.keyword_filter]
             new = {"actions": acts + [alert(modlogs)]}
@@ -72,7 +72,7 @@ async def main(apply: bool):
                                                         regex_patterns=r.trigger.regex_patterns,
                                                         allow_list=r.trigger.allow_list)
                 plan.append(f"{r.name}: fixed the entry with a pasted @mention")
-            plan.append(f"{r.name}: alerts -> #mod-logs")
+            plan.append(f"{r.name}: alerts -> #actions")
         elif r.trigger.type == T.member_profile:
             words = [("*beaner*" if "beaner" in w else w) for w in r.trigger.keyword_filter
                      if w.lower() not in PROFILE_DROP]
@@ -86,10 +86,10 @@ async def main(apply: bool):
             plan.append(f"{r.name}: removed {sorted(PROFILE_DROP)} (matched almost every name), switched ON")
         elif any(a.type == ACT.send_alert_message for a in r.actions):
             new = {"actions": acts + [alert(modlogs)]}
-            plan.append(f"{r.name}: alerts -> #mod-logs")
+            plan.append(f"{r.name}: alerts -> #actions")
         if new and apply:
             try:
-                await r.edit(**new, reason="Bot security setup: alerts to #mod-logs")
+                await r.edit(**new, reason="Bot security setup: alerts to #actions")
             except discord.HTTPException as e:   # "Block Mention Spam" (made by an old app in 2022) answers 404
                 plan.append(f"{r.name}: Discord refused the edit ({e.status}), change it in Server Settings > AutoMod")
 
@@ -101,7 +101,7 @@ async def main(apply: bool):
         if name in rules:
             plan.append(f"{name}: already there")
             continue
-        plan.append(f"{name}: new rule (block + alert in #mod-logs; staff exempt)")
+        plan.append(f"{name}: new rule (block + alert in #actions; staff exempt)")
         if apply:
             await g.create_automod_rule(
                 name=name, event_type=discord.AutoModRuleEventType.message_send, trigger=trig, enabled=True,

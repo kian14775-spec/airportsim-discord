@@ -1,16 +1,15 @@
-"""Audit log -> LOGS channels: every staff action, with who did it and why. Discord sends
-each audit log entry the moment it's made, so nothing is polled.
+"""Audit log -> log channels: staff actions, with who did it and why. Discord sends each
+audit log entry the moment it's made, so nothing is polled.
 
-mod-logs       kicks, bans, unbans, timeouts, prunes
-member-logs    nicknames and roles (changed by staff or other bots)
-voice-logs     server mutes and deafens, moves, disconnects
-message-logs   pins
-security-logs  bots added, webhooks, integrations, AutoMod rules, command permissions, and
-               any change that hands out dangerous permissions or weakens server safety
-server-logs    the rest: channels, permissions, roles, invites, emojis, stickers, threads,
-               events, server settings
+#alerts   bots added, webhooks, integrations, AutoMod rules, command permissions, and any
+          change that hands out dangerous permissions or weakens server safety
+#actions  everything else staff do: kicks, bans, timeouts, prunes, nicknames, roles, voice
+          mutes and disconnects, channels, permissions, roles, server settings
 
-The bot's own actions are logged where they happen (with context), so they're skipped
+Quiet on purpose (no post): what's listed in `logs: muted:` in config/bot.yaml, role and
+nickname changes by other bots (Bloxlink on every verify) and nicknames members set
+themselves. Anything about a member still goes on their timeline. A dangerous change always
+posts. The bot's own actions are logged where they happen (with context), so they're skipped
 here, except layout changes to channels, roles and the server. Message deletes are logged
 by modlog.py (it has the text).
 """
@@ -23,7 +22,8 @@ from enum import Enum
 import discord
 from discord.ext import commands
 
-from ..core import log_card, log_staff
+from .. import timeline
+from ..core import log_card, log_off, log_staff
 
 A = discord.AuditLogAction
 DANGER = ("administrator", "manage_guild", "manage_roles", "manage_channels", "manage_webhooks",
@@ -257,6 +257,25 @@ def describe(entry: discord.AuditLogEntry) -> tuple[str, str, str, discord.abc.U
     return kind, title, "\n".join(x for x in lines if x), user
 
 
+def quiet(entry: discord.AuditLogEntry, kind: str, title: str) -> bool:
+    """Not worth a post: switched off, a bot changing roles or nicknames, or someone's own nickname."""
+    if title.startswith("⚠️"):
+        return False
+    if log_off(entry.action.name):
+        return True
+    if kind != "Members":
+        return False
+    return getattr(entry.user, "bot", False) or entry.user_id == getattr(entry.target, "id", None)
+
+
+def timeline_text(entry: discord.AuditLogEntry, title: str, body: str) -> str:
+    """One timeline line: what changed (the body's first line is just the member), who, why."""
+    detail = " · ".join(body.split("\n")[1:])
+    own = entry.user_id == getattr(entry.target, "id", None)
+    return title.removeprefix("⚠️ ") + (f": {detail}" if detail else "") + ("" if own else f" by <@{entry.user_id}>") \
+        + (f" · {entry.reason}" if entry.reason else "")
+
+
 class AuditLog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -278,6 +297,11 @@ class AuditLog(commands.Cog):
         if own and (entry.action not in OWN_KEEP or "lounge" in str(name).lower()):
             return
         kind, title, body, user = describe(entry)
+        target_id = getattr(entry.target, "id", None)
+        if target_id and (user or entry.action in MOD) and entry.action not in MESSAGES and entry.action != A.member_prune:
+            timeline.add(target_id, "staff", timeline_text(entry, title, body))
+        if quiet(entry, kind, title):
+            return
         if user is None and entry.action in MOD and isinstance(entry.target, discord.Object):
             try:
                 user = await self.bot.fetch_user(entry.target.id)

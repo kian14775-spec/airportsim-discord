@@ -12,7 +12,7 @@ import random
 import discord
 from discord.ext import commands
 
-from .. import cards, db, ui
+from .. import cards, db, timeline, ui
 from ..core import (cfg, channel, embed, log_card, log_staff, role, role_named, roblox_headshot,
                     roblox_user, roblox_user_by_name)
 from ..panels import drop_panel
@@ -79,7 +79,8 @@ async def finish_link(interaction: discord.Interaction, roblox_id: int, roblox_n
     if roles_ch:
         e.add_field(name="Next", value=f"Pick your ping roles in {roles_ch.mention}.", inline=False)
     await interaction.followup.send(embed=e, ephemeral=True)
-    await log_staff(member.guild, "", kind="Verifications", embed=log_card(
+    timeline.add(member.id, "member", f"Verified as {roblox_name}")
+    await log_staff(member.guild, "", kind="Verifications", event="verified", embed=log_card(
         "Verified", f"{member.mention} as [{roblox_name}](https://www.roblox.com/users/{roblox_id}/profile) (`{roblox_id}`)",
         tone="good", user=member))
     await welcome_dm(member)

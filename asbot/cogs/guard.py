@@ -16,8 +16,9 @@ Raids       a join wave (or many brand-new accounts) pauses invites and DMs (Dis
             unverified accounts from the wave. /lockdown does the same by hand.
 Nukes       someone deleting channels/roles/webhooks or banning in bulk (a hacked staff
             account or a bad bot) loses their dangerous roles at once; bots are kicked.
-Setup       on start: Discord's own raid/DM-spam alerts go to security-logs, and missing
+Setup       on start: Discord's own raid/DM-spam alerts go to #alerts, and missing
             permissions or roles above the bot's (it can't protect against those) are reported.
+Status      a pinned card in #alerts: all clear, or what's going on. Edited only when it changes.
 """
 from __future__ import annotations
 
@@ -30,8 +31,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import db
-from ..core import cfg, channel, is_staff, log, log_card, log_channel, log_staff, role, role_named
+from .. import cards, db, timeline, ui
+from ..core import ALERT_HOURS, cfg, channel, is_staff, log, log_card, log_channel, log_staff, role, role_named
 
 A = discord.AuditLogAction
 DANGER = ("administrator", "manage_guild", "manage_roles", "manage_channels", "manage_webhooks",
@@ -133,6 +134,23 @@ def alert_ping(guild: discord.Guild) -> tuple[str, discord.AllowedMentions]:
     return " ".join(r.mention for r in roles), discord.AllowedMentions(roles=roles)
 
 
+def status_parts(lockdown: dict | None, alerts: list, setup: list, now: float) -> tuple[str, str, int]:
+    """(headline, body, accent) for the live status card in #alerts."""
+    recent = [a for a in alerts if now - a[0] < ALERT_HOURS * 3600]
+    lines = [f"<t:{int(t)}:R> {title}" for t, title in recent[-5:][::-1]]
+    if lockdown:
+        head, accent = "Lockdown on", ui.BAD
+        lines.insert(0, f"Lifts <t:{int(lockdown['until'])}:R> · {lockdown.get('reason', '')}")
+    elif recent:
+        head, accent = f"{len(recent)} alert{'' if len(recent) == 1 else 's'} in the last {ALERT_HOURS} h", ui.WAIT
+    else:
+        head, accent = "All clear", ui.SLATE
+        lines.append(f"No alerts in the last {ALERT_HOURS} h.")
+    if setup:
+        lines += ["", "**Setup to fix**"] + [f"• {p}" for p in setup]
+    return head, "\n".join(lines), accent
+
+
 # ---------- buttons on security cards (work after restarts) ----------
 class MemberAction(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:guard:(?P<act>untime|ban):(?P<uid>\d+)"):
     def __init__(self, act: str, uid: int):
@@ -222,7 +240,7 @@ class Guard(commands.Cog):
             return
         if g._safety_alerts_channel_id != sec.id:
             try:   # Discord's own raid / DM-spam alerts land next to ours
-                await g.edit(safety_alerts_channel=sec, reason="Security alerts -> security-logs")
+                await g.edit(safety_alerts_channel=sec, reason="Security alerts -> #alerts")
             except discord.HTTPException as e:
                 log.warning("safety alerts channel: %s", e)
         me = g.me
@@ -236,6 +254,25 @@ class Guard(commands.Cog):
             db.kv_set("guard:setup", problems)
             if problems:
                 await sec.send(embed=log_card("Security setup check", "\n".join(f"• {p}" for p in problems), tone="wait"))
+
+    async def update_status(self, g: discord.Guild):
+        """Edits only when the words change, so a quiet day makes no requests."""
+        sec = log_channel(g, "Security")
+        if not sec:
+            return
+        now = time.time()
+        recent = [a for a in db.kv_get("alerts:recent", []) if now - a[0] < ALERT_HOURS * 3600]
+        head, body, accent = status_parts(db.kv_get("guard:lockdown"), recent, db.kv_get("guard:setup") or [], now)
+        row, shown = db.panel("alerts_status"), f"{sec.id}|{head}|{body}"
+        if row and row["channel_id"] == sec.id and db.kv_get("alerts:shown") == shown:
+            return
+        msg = await cards.post_card("alerts_status", sec, cards.CardView(cards.container(cards.title(head, body), accent=accent)))
+        db.kv_set("alerts:shown", shown)
+        if msg and not msg.pinned:
+            await msg.pin()
+            async for m in sec.history(limit=5):   # drop the "pinned a message" notice under it
+                if m.type == discord.MessageType.pins_add and m.author.id == g.me.id:
+                    await m.delete()
 
     # ---------- messages ----------
     @commands.Cog.listener()
@@ -319,6 +356,7 @@ class Guard(commands.Cog):
             pass
         where = f" in {msgs[0].channel.mention}" if msgs else ""
         evidence = f"\n> {(msgs[0].content or '(files)')[:300]}" if msgs else ""
+        timeline.add(member.id, "auto", f"Auto-timeout {minutes} min: {reason}")
         await log_staff(member.guild, "", kind="Moderation", embed=log_card(
             "Auto-timeout", f"{member.mention}{where} · {reason}{evidence}\n"
                             f"Timed out **{minutes} min**{note} · hit {n} in 24 h" + (" · consider a ban" if n >= 3 else ""),
@@ -349,6 +387,7 @@ class Guard(commands.Cog):
         v.add_item(MemberAction("untime", member.id))
         v.add_item(MemberAction("ban", member.id))
         sample = (msgs[0].content or "(files only)")[:500]
+        timeline.add(member.id, "auto", f"Looked hacked, timed out 24 h: {reason}")
         await log_staff(member.guild, text, kind="Security", allowed_mentions=mentions, view=v, embed=log_card(
             "Hacked account or scammer", f"{member.mention} · {reason}\n> {sample}\n"
                                          f"Deleted **{len(msgs)}** message(s), timed out **24 h**, sent them how to secure it.{note}",
@@ -482,20 +521,25 @@ class Guard(commands.Cog):
             for k in [k for k, q in d.items() if not q or now - (q[-1][0] if isinstance(q[-1], tuple) else q[-1]) > 86400]:
                 d.pop(k, None)
         self.staff_seen = {k: t for k, t in self.staff_seen.items() if now - t < 3600}
+        if g:
+            try:
+                await self.update_status(g)
+            except discord.HTTPException as e:
+                log.warning("alerts status card: %s", e)
 
     @tick.before_loop
     async def _wait(self):
         await self.bot.wait_until_ready()
 
     @lockdown.command(name="start", description="Pause new joins and member DMs")
-    @app_commands.describe(minutes="How long (it lifts by itself)", reason="Shown in security-logs")
+    @app_commands.describe(minutes="How long (it lifts by itself)", reason="Shown in #alerts")
     async def lockdown_start(self, interaction: discord.Interaction, minutes: app_commands.Range[int, 5, 1440] = 60,
                              reason: str = "Started by staff"):
         if not interaction.user.guild_permissions.kick_members:
             return await interaction.response.send_message("You can't do that.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         await self.start_lockdown(interaction.guild, minutes, reason, by=interaction.user)
-        await interaction.followup.send(f"Lockdown on for {minutes} min. Details in security-logs.", ephemeral=True)
+        await interaction.followup.send(f"Lockdown on for {minutes} min. Details in #alerts.", ephemeral=True)
 
     @lockdown.command(name="end", description="Let people join and DM again")
     async def lockdown_end(self, interaction: discord.Interaction):

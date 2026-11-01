@@ -335,7 +335,8 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
             db.run("UPDATE tickets SET claimed_by=? WHERE id=?", member.id, t["id"])
             await interaction.response.send_message(f"You claimed ticket {t['id']:04d}.", ephemeral=True)
             await cog.refresh(t["id"])
-            await log_staff(cog.guild, f"Ticket {t['id']:04d} claimed by {member.mention}", kind="Tickets")
+            await log_staff(cog.guild, f"Ticket {t['id']:04d} claimed by {member.mention}", kind="Tickets",
+                            event="ticket_claimed")
         elif self.action == "dev":
             db.kv_set(f"ticket_dev:{t['id']}", True)
             dev = role_named(cog.guild, cfg().get("dev_role_name", "Developer"))
@@ -442,7 +443,8 @@ class RateButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:rat
         db.run("UPDATE tickets SET rating=? WHERE id=?", self.score, self.tid)
         await interaction.response.edit_message(content=f"Thanks! You rated this {'★' * self.score}.", view=None)
         cog = interaction.client.get_cog("Tickets")
-        await log_staff(cog.guild, f"Ticket {self.tid:04d} rated {'★' * self.score} by the member", kind="Tickets")
+        await log_staff(cog.guild, f"Ticket {self.tid:04d} rated {'★' * self.score} by the member", kind="Tickets",
+                        event="ticket_rated")
 
 
 class AssistButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:ta:(?P<id>\d+):(?P<ans>fixed|not|human|known)"):
@@ -842,7 +844,7 @@ class Tickets(commands.Cog):
             await self.helper_note(made.thread, first_text, f"Sent {first_label}")
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
         await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
-                                    + (" · Support Agent on it" if helping else ""), kind="Tickets")
+                                    + (" · Support Agent on it" if helping else ""), kind="Tickets", event="ticket_opened")
 
     # ---------- support helper (rule based: instant answers only, no AI) ----------
     async def helper_note(self, thread, text: str, what: str = "Support helper"):
@@ -926,7 +928,8 @@ class Tickets(commands.Cog):
                                      "where in the game it happens.", what="Handed over")
         await self.refresh(t["id"])
         why = f"taken over by {by.display_name}" if by else reason
-        await log_staff(self.guild, f"Ticket {t['id']:04d}: Support Agent handed over ({why})", kind="Tickets")
+        await log_staff(self.guild, f"Ticket {t['id']:04d}: Support Agent handed over ({why})", kind="Tickets",
+                        event="ticket_handover")
 
     async def helper_reply(self, t, text: str):
         """The member typed while the helper is on: wants a person? says thanks? or a new detail to match."""

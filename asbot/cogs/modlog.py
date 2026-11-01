@@ -1,20 +1,20 @@
-"""Logs (replaces Circle and Dyno): messages, members and voice, each in its own channel in
-the LOGS category. Staff actions (bans, roles, channels...) and who did them come from the
-audit log in auditlog.py.
+"""Logs (replaces Circle and Dyno): what members did goes to #activity. Staff actions (bans,
+roles, channels...) and who did them come from the audit log in auditlog.py.
 
-message-logs  deleted messages (text from the cache or a 7-day store, images kept for a few
-              hours so they can be posted again), edits, purges (as a .txt), ghost pings
-member-logs   joins (account age, which invite), leaves (time in server, roles), names,
-              avatars, nicknames, boosts
-voice-logs    joins, leaves and moves
+#activity  deleted messages (text from the cache or a 7-day store, images kept for a few
+           hours so they can be posted again), edits, purges (as a .txt), ghost pings,
+           one-line joins and leaves, boosts
+timeline   names, avatars, own nicknames and voice only go on the member's timeline
+           (asbot/timeline.py), unless taken out of `logs: muted:` in config/bot.yaml
 
-Left out on purpose: bots, the ticket inbox (the bot mirrors DMs there) and the log
-channels themselves.
+Left out on purpose: bots, the ticket inbox (the bot mirrors DMs there), the log channels
+themselves and small edits (typos), as long as they don't add a link or a ping.
 """
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import difflib
 import io
 import re
 import time
@@ -22,8 +22,8 @@ import time
 import discord
 from discord.ext import commands, tasks
 
-from .. import db
-from ..core import cfg, channel, log, log_card, log_staff
+from .. import db, timeline
+from ..core import cfg, channel, is_staff, log, log_card, log_staff
 from ..paths import DATA
 
 db.conn().executescript("""
@@ -33,9 +33,11 @@ CREATE INDEX IF NOT EXISTS msglog_created ON msglog(created);
 """)
 
 CACHE = DATA / "logcache"
-LOG_KEYS = ("log_security", "log_mod", "log_members", "log_messages", "log_server", "log_voice", "log_tickets")
+LOG_KEYS = ("log_security", "log_mod", "log_messages")
 MAX_FILE = 8 * 1024 * 1024        # bots can upload 10 MB per message on an unboosted server
 GHOST_SECONDS = 120
+SMALL_EDIT = 0.85                 # this similar (0-1) = a typo fix, not worth a post
+LINK_OR_PING = re.compile(r"https?://\S+|<@[!&]?\d+>|@everyone|@here")
 
 
 def settings() -> dict:
@@ -73,6 +75,13 @@ def show_mentions(ids: str) -> str:
     return " ".join(out)
 
 
+def small_edit(before: str, after: str) -> bool:
+    """A typo fix: nearly the same text, and no link or ping that wasn't there before."""
+    if set(LINK_OR_PING.findall(after)) - set(LINK_OR_PING.findall(before)):
+        return False
+    return difflib.SequenceMatcher(None, before.lower(), after.lower()).ratio() >= SMALL_EDIT
+
+
 def safe_name(name: str) -> str:
     return re.sub(r"[^\w.\-]", "_", name)[-80:]
 
@@ -108,6 +117,7 @@ class ModLog(commands.Cog):
     async def prune(self):
         s = settings()
         db.run("DELETE FROM msglog WHERE created<?", time.time() - s["keep_messages_days"] * 86400)
+        timeline.prune()
         files = sorted(CACHE.glob("*"), key=lambda p: p.stat().st_mtime)
         cutoff, cap = time.time() - s["keep_images_hours"] * 3600, s["keep_images_mb"] * 1024 * 1024
         total = sum(p.stat().st_size for p in files)
@@ -192,6 +202,8 @@ class ModLog(commands.Cog):
         card = log_card("Ghost ping" if ghost else "Message deleted", body,
                         tone="wait" if ghost else "bad" if by else "neutral",
                         user=author if isinstance(author, (discord.User, discord.Member)) else None, by=by)
+        timeline.add(author.id, "message", f"{'Ghost ping' if ghost else 'Message deleted'} in {ch.mention}"
+                                           + (f" by <@{by.id}>" if by else ""))
         await log_staff(g, "", kind="Messages", embed=card, files=files)
         for f in kept_files(p.message_id):
             f.unlink(missing_ok=True)
@@ -244,6 +256,9 @@ class ModLog(commands.Cog):
         if before is None or before == m.content:   # unknown old message, or only an embed loaded
             return
         db.run("UPDATE msglog SET content=?, mentions=? WHERE id=?", m.content, mention_ids(m), m.id)
+        if small_edit(before, m.content):
+            return
+        timeline.add(m.author.id, "message", f"Edited a message in {m.channel.mention}")
         await log_staff(m.guild, "", kind="Messages", embed=log_card(
             "Message edited", f"{m.author.mention} in {m.channel.mention} · [jump]({m.jump_url})\n"
                               f"**Before**\n{quote(before, 450)}\n**After**\n{quote(m.content, 450)}", user=m.author))
@@ -279,24 +294,32 @@ class ModLog(commands.Cog):
         inv = await self.used_invite(g) if len(self.joins) <= 5 else None   # skip the lookups during a join wave
         young = (discord.utils.utcnow() - member.created_at).days < 7
         flagged = member.public_flags.spammer
+        invite = f"Invite `{inv[0]}`" + (f" from <@{inv[1]}>" if inv[1] else "") + f" · {inv[2]} uses" if inv else None
+        timeline.add(member.id, "member", "Joined" + (f" · {invite}" if invite else ""))
+        if not (young or flagged or member.bot):   # a normal join is one line
+            return await log_staff(g, "", kind="Activity", event="join", embed=log_card(
+                None, f"**Joined** {member.mention} · member {g.member_count:,}"))
         lines = [f"{member.mention} · member {g.member_count:,}",
                  f"Account made {when(member.created_at.timestamp())}" + (" · **new account**" if young else "")]
-        if inv:
-            lines.append(f"Invite `{inv[0]}`" + (f" from <@{inv[1]}>" if inv[1] else "") + f" · {inv[2]} uses")
+        if invite:
+            lines.append(invite)
         if flagged:
             lines.append("**Discord flags this account as a likely spammer**")
         if member.bot:
             lines.append("**Bot**")
-        await log_staff(g, "", kind="Members", embed=log_card(
+        await log_staff(g, "", kind="Activity", event="join", embed=log_card(
             "Joined", "\n".join(lines), tone="wait" if young or flagged else "neutral", user=member))
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        timeline.add(member.id, "member", "Left")
+        joined = f" · joined {when(member.joined_at.timestamp())}" if member.joined_at else ""
+        if not is_staff(member):                   # a normal leave is one line
+            return await log_staff(member.guild, "", kind="Activity", event="leave", embed=log_card(
+                None, f"**Left** {member.mention}{joined}"))
         roles = [r.mention for r in reversed(member.roles) if not r.is_default()]
-        lines = [member.mention + (f" · joined {when(member.joined_at.timestamp())}" if member.joined_at else "")]
-        if roles:
-            lines.append("Roles " + " ".join(roles)[:900])
-        await log_staff(member.guild, "", kind="Members", embed=log_card("Left", "\n".join(lines), user=member))
+        await log_staff(member.guild, "", kind="Activity", event="leave", embed=log_card(
+            "Staff member left", f"{member.mention}{joined}\nRoles " + " ".join(roles)[:900], tone="wait", user=member))
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
@@ -312,23 +335,26 @@ class ModLog(commands.Cog):
         if avatar:
             lines.append("New avatar →")
         if lines:
-            await log_staff(g, "", kind="Members", embed=log_card(
+            timeline.add(after.id, "profile", " · ".join(lines).removesuffix(" →"))
+            await log_staff(g, "", kind="Activity", event="profile", embed=log_card(
                 "Profile changed", f"{after.mention}\n" + "\n".join(lines), user=after,
                 thumb=after.display_avatar.url if avatar else None))
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         if before.premium_since != after.premium_since:
-            await log_staff(after.guild, "", kind="Members", embed=log_card(
+            timeline.add(after.id, "member", "Boosted the server" if after.premium_since else "Stopped boosting")
+            await log_staff(after.guild, "", kind="Activity", event="boost", embed=log_card(
                 "Boosted the server" if after.premium_since else "Stopped boosting", after.mention,
                 tone="good" if after.premium_since else "neutral", user=after))
         if before.nick != after.nick:
-            await asyncio.sleep(3)   # changes with an audit entry are logged by auditlog.py (with who did it)
+            await asyncio.sleep(3)   # changes with an audit entry are handled by auditlog.py (with who did it)
             audit = self.bot.get_cog("AuditLog")
             if not (audit and audit.saw(discord.AuditLogAction.member_update, after.id)):
-                await log_staff(after.guild, "", kind="Members", embed=log_card(
-                    "Nickname changed", f"{after.mention}\n**{before.nick or before.name}** → **{after.nick or after.name}**",
-                    user=after))
+                change = f"**{before.nick or before.name}** → **{after.nick or after.name}**"
+                timeline.add(after.id, "profile", f"Nickname {change}")
+                await log_staff(after.guild, "", kind="Activity", event="self_nick", embed=log_card(
+                    "Nickname changed", f"{after.mention}\n{change}", user=after))
 
     # ---------- voice ----------
     @commands.Cog.listener()
@@ -341,7 +367,8 @@ class ModLog(commands.Cog):
             text = f"left **{before.channel.name}**"
         else:
             text = f"moved **{before.channel.name}** → **{after.channel.name}**"
-        await log_staff(m.guild, "", kind="Voice", embed=log_card(None, f"{m.mention} {text}", user=m))
+        timeline.add(m.id, "voice", f"Voice: {text}")
+        await log_staff(m.guild, "", kind="Activity", event="voice_moves", embed=log_card(None, f"{m.mention} {text}", user=m))
 
 
 async def setup(bot):

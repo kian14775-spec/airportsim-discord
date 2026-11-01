@@ -1,10 +1,15 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-10-31, s21b)
+## RESUME HERE (2026-11-01, s22)
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve",
 service "my-bot", volume "my-bot-volume" at /data (54/500 MB). Repo folder is `railway link`ed. NO copy runs on the PC.
 RULE: nothing may cost money / eat the Railway credit, no paid AI. Deploys + live server deletes need Kian's OK
 (auto-mode blocks them otherwise). Railway uploads sometimes fail with no build: just `railway up` again.
+s22 LOGS 7 -> 3, BUILT + COMMITTED, NOT LIVE: #alerts (log_security, pinned live status card) / #actions (log_mod) /
+#activity (log_messages). Keys kept, so ids + history stay. Muted events: `logs: muted:` in config/bot.yaml (NOT `off:`, YAML
+reads that as false). Member timeline in /staff lookup (asbot/timeline.py). To go live, with Kian's OK, in this order:
+`railway up --detach` -> `python tools/logs_merge.py rename` -> check all 3 post + selftest -> `python tools/logs_merge.py delete`
+(backs up + deletes the 4 old channels by id). Don't use `layout apply` for this: see NOTE below.
 s21 LIVE (deploy 20f2e318, 2026-10-31, selftest 54/54): LOGS category (security/mod/member/message/server/voice/
 ticket-logs, staff read-only, keys log_*), core.log_staff -> core.LOG_CHANNELS + log_card(); modlog.py (msglog
 7-day store, image copies in DATA/logcache, who-deleted, purge .txt, ghost pings, invite used, profile/boost, voice),
@@ -71,3 +76,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-29: NEW asbot/cogs/securitylog.py (raid alert, ban/timeout with moderator, invites, bot/webhook added, powerful role given, server/channel/emoji changes, voice) -> new #logs threads "Security" + "Server". Ban/unban/timeout logs moved out of verify.py. Compiled OK, NOT yet deployed (railway up).
 - 2026-10-31 s21: LOGS category (7 channels, created live) + modlog/auditlog/guard rewrite, AutoMod setup tool, server audit + ideas doc (docs/2026-10-31_logs_security_ideas.md). Committed; deploy + AutoMod apply + #logs delete wait on Kian's OK.
 - 2026-10-31 s21b: deployed (2nd try; 1st upload failed), AutoMod tuned (5/6), mass-ping guard, /help fixed (Traveler slash cmds denied in general/media), old #logs deleted after backup, selftest 54/54. ARCHIVE tickets wait on Kian.
+- 2026-11-01 s22: logs 7 -> 3 channels (Kian: minimal, modern), cut list muted, one-line joins/leaves, typo edits skipped, member timeline, live status card, tools/logs_merge.py, tests/test_logs.py. Committed; deploy + rename + delete wait on Kian's OK.

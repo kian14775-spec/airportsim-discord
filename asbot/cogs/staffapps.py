@@ -65,7 +65,8 @@ class AppModal(discord.ui.Modal):
             except discord.HTTPException:
                 pass
         await interaction.followup.send("Application sent. You'll get a DM when the team decides.", ephemeral=True)
-        await log_staff(interaction.guild, f"New {self.position} application from {user.mention}", kind="Applications")
+        await log_staff(interaction.guild, f"New {self.position} application from {user.mention}", kind="Applications",
+                        event="application_new")
 
 
 class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:app:(?P<action>accept|deny):(?P<id>\d+)"):

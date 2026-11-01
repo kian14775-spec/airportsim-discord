@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import cards, db, ui
+from .. import cards, db, timeline, ui
 from ..core import staff_only
 from .community import template_files
 from .forums import FeedbackModal, RpModal
@@ -118,7 +118,7 @@ ACTIONS = [("tickets", "Tickets", "Browse open and closed tickets, read transcri
            ("status", "Game status", "All good, issues, down, maintenance"),
            ("issues", "Known issues and next update", "What shows on the support card"),
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
-           ("member", "Look up a member", "Roblox link, tickets, strikes"),
+           ("member", "Look up a member", "Roblox link, tickets, strikes, timeline"),
            ("warn", "Warn a member", "Give a strike; timeouts happen by themselves"),
            ("answers", "Instant answers", "Add, see and remove the helper's answers"),
            ("today", "Today's numbers", "Joins, visits, group, tickets so far today"),
@@ -272,6 +272,7 @@ class MemberPick(discord.ui.UserSelect):
         from .strikes import RemoveStrike, active, strikes_line
         e = ui.card(m.display_name, ui.kv(("Discord", m.mention), ("Roblox", roblox), ("Joined", joined),
                                           ("Tickets", tl), ("Strikes", strikes_line(m.id))), thumb=m.display_avatar.url)
+        e.add_field(name="Timeline", value=timeline.lines(m.id)[:1024] or "Nothing yet.", inline=False)
         from ..transcripts import HistoryButton
         v = discord.ui.View(timeout=600)
         if tickets:

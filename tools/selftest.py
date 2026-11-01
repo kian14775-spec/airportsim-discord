@@ -59,7 +59,7 @@ async def run(client: discord.Client):
     mod = g.get_role(state["role:moderator"])
     public = ["welcome", "announcements", "devlogs", "socials", "chat", "media", "liveries", "rp_servers", "support", "feedback",
               "create_party"]
-    staff = ["staff_chat", "stats", "inbox", "applications", "log_security", "log_mod", "log_members", "log_messages", "log_server", "log_voice", "log_tickets"]
+    staff = ["staff_chat", "stats", "inbox", "applications", "log_security", "log_mod", "log_messages"]
 
     for key in public + staff:
         c = ch(key)
