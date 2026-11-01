@@ -32,9 +32,9 @@ Python 3.12 + discord.py, runs 24/7 on Railway (free plan, volume at /data).
 | `forums.py` | Ideas-and-bugs (votes, duplicates, digest), airlines (/rp), liveries contest board |
 | `community.py` | Feedback votes + "your idea shipped", templates, contest start/end, lounge voice, perks |
 | `hub.py` | /help (members), /staff (staff panel), live staff summary card |
-| `modlog.py` | Logs: messages (7-day text store, image copies, who deleted), members (invite used), voice -> LOGS channels |
-| `auditlog.py` | Every audit log entry (staff action + who + reason) -> mod/member/server/security/voice logs |
-| `guard.py` | Anti-spam, fake links, hacked accounts, staff-ping nudges, raid lockdown (/lockdown), anti-nuke, setup check |
+| `modlog.py` | Logs -> #activity: messages (7-day text store, image copies, who deleted), one-line joins and leaves, boosts; names and voice only go on the timeline |
+| `auditlog.py` | Audit log entries (staff action + who + reason) -> #actions, or #alerts when dangerous |
+| `guard.py` | Anti-spam, fake links, hacked accounts, staff-ping nudges, raid lockdown (/lockdown), anti-nuke, setup check, live status card in #alerts |
 | `admin.py` | /layout preview / apply (admins) |
 | `health.py` | Watchdog restart, error replies |
 
@@ -45,7 +45,7 @@ Staff (hidden from members, need the "Timeout members" permission or an Integrat
 
 ## Rules for new code
 - Messages: `ui.card(...)` (or `core.embed`) only, never raw colours.
-- Logs: `core.log_staff(guild, text, kind=...)` or `embed=core.log_card(...)`; kinds map to the LOGS channels in `core.LOG_CHANNELS`.
+- Logs: `core.log_staff(guild, text, kind=..., event=...)` or `embed=core.log_card(...)`; kinds map to the 3 LOGS channels in `core.LOG_CHANNELS`; `logs: muted:` in config/bot.yaml switches events off. `timeline.add(user_id, kind, text)` adds a line to a member's history in the /staff lookup.
 - Channels/roles: look up by layout key (`core.channel(guild, "inbox")`), never by name or id.
 - Long-lived buttons: persistent `custom_id` (`asbot:<feature>:...`), registered in the cog's `__init__`.
 - Deploy: `railway up --detach` from this folder. Layout changes: edit the yaml, `python layout.py apply`,
