@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import discord
 
-from . import db, transcripts, ui
+from . import db, names, transcripts, ui
 from .core import is_staff
 
 PER_PAGE = 10
@@ -58,7 +58,7 @@ class Browser(discord.ui.View):
                     f"<t:{int(t['created'])}:R>{where}")
         gone = " · 🗑️ deleted" if db.kv_get(f"tdeleted:{t['id']}") else ""
         rate = f" · {'★' * t['rating']}" if t["rating"] else ""
-        by = f" · <@{t['claimed_by']}>" if t["claimed_by"] else ""
+        by = f" · {names.who(t['claimed_by'])}" if t["claimed_by"] else ""
         return (f"⚫ **{t['id']:04d}** · {topic_label(t['topic'])} · {_name(t)} · closed "
                 f"<t:{int(t['closed'] or t['created'])}:R>{by}{rate}{gone}")
 

@@ -15,10 +15,10 @@ os.environ.setdefault("ASBOT_DATA", tempfile.mkdtemp())   # keep the test databa
 
 import discord  # noqa: E402
 
-from asbot import core, db, timeline, ui  # noqa: E402
+from asbot import core, db, names, timeline, ui  # noqa: E402
 from asbot.cogs import auditlog  # noqa: E402
 from asbot.cogs.guard import status_parts  # noqa: E402
-from asbot.cogs.modlog import small_edit  # noqa: E402
+from asbot.cogs.modlog import small_edit, span  # noqa: E402
 from asbot.layout import model  # noqa: E402
 
 A = discord.AuditLogAction
@@ -123,6 +123,38 @@ def test_status_card():
     assert head == "Lockdown on" and accent == ui.BAD and "Join wave" in body and "Role above mine" in body
     head, _, _ = status_parts(None, [], ["Role above mine"], now)
     assert head == "All clear"   # a setup note is listed but isn't an incident
+
+
+def test_cards_show_names_not_numbers():
+    here = NS(id=5, display_name="Pilot [one]", name="pilot")
+    gone = NS(id=6, display_name="Police578500", name="eric")
+    dotted = NS(id=7, display_name="site.com", name="s")
+    names.remember_all([here, gone, dotted])
+    names.client = NS(guilds=[NS(get_member={5: here, 7: dotted}.get)])
+    assert names.who(5) == "[Pilot  one](https://discord.com/users/5)"
+    assert names.who(6) == "**Police578500**"          # left: name kept, no dead link
+    assert "http" not in names.who(7)                  # Discord refuses links that look like web addresses
+    assert names.who(8) == "user `8`"
+    assert names.swap("by <@6> and <@!5> in <#9> <@&4>").startswith("by **Police578500** and [Pilot")
+    assert "<#9> <@&4>" in names.swap("<@6> <#9> <@&4>")
+    assert "http" not in names.swap("<@5> " * 3, 60) and len(names.swap("<@5> " * 30, 60)) == 60
+    e = ui.card(None, "Left <@6>", fields=[("Member", "<@6>", True)])
+    asyncio.run(names.fill_embed(e))
+    assert e.description == "Left **Police578500**" and e.fields[0].value == "**Police578500**"
+
+
+def test_unknown_person_is_looked_up_once():
+    async def fetch(uid):
+        calls.append(uid)
+        return NS(id=uid, display_name="Old member", name="old")
+    calls = []
+    names.client = NS(guilds=[], fetch_user=fetch)
+    assert asyncio.run(names.fill("<@900>")) == "**Old member**"
+    assert asyncio.run(names.fill("<@900>")) == "**Old member**" and calls == [900]
+
+
+def test_span_reads_the_same_forever():
+    assert [span(s) for s in (40, 59 * 60, 3 * 3600, 86400, 40 * 86400, 800 * 86400)] ==         ["40 sec", "59 min", "3 hours", "1 day", "1 month", "2 years"]
 
 
 if __name__ == "__main__":

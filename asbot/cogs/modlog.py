@@ -22,7 +22,7 @@ import time
 import discord
 from discord.ext import commands, tasks
 
-from .. import db, timeline
+from .. import db, names, timeline
 from ..core import cfg, channel, is_staff, log, log_card, log_staff
 from ..paths import DATA
 
@@ -56,6 +56,16 @@ def quote(text: str | None, limit: int = 900) -> str:
     if len(text) > limit:
         text = text[:limit] + "…"
     return "> " + text.replace("\n", "\n> ")
+
+
+def span(seconds: float) -> str:
+    """A length of time that stays true on an old card: `59 min`, `3 days`, `2 years`."""
+    s = max(0, int(seconds))
+    for size, one in ((31536000, "year"), (2592000, "month"), (86400, "day"), (3600, "hour"), (60, "min")):
+        if s >= size:
+            n = s // size
+            return f"{n} {one}" + ("s" if n > 1 and one != "min" else "")
+    return f"{s} sec"
 
 
 def when(ts: float) -> str:
@@ -104,6 +114,7 @@ def take_files(message_id: int) -> list[discord.File]:
 class ModLog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        names.client = bot
         self.del_counts: dict[int, int] = {}     # audit entry id -> deletes it counted
         self.invites: dict[str, tuple[int, int | None]] = {}   # code -> (uses, inviter id)
         self.joins: list[float] = []
@@ -130,6 +141,7 @@ class ModLog(commands.Cog):
     async def on_ready(self):
         g = self.bot.get_guild(self.bot.guild_id)
         if g:
+            names.remember_all(g.members)
             await self.load_invites(g)
             await self.deleter(g, 0, 0)   # remember today's counts so old entries are never blamed
 
@@ -290,36 +302,35 @@ class ModLog(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         g, now = member.guild, time.time()
+        names.remember(member)
         self.joins = [t for t in self.joins if now - t < 30] + [now]
         inv = await self.used_invite(g) if len(self.joins) <= 5 else None   # skip the lookups during a join wave
         young = (discord.utils.utcnow() - member.created_at).days < 7
         flagged = member.public_flags.spammer
         invite = f"Invite `{inv[0]}`" + (f" from <@{inv[1]}>" if inv[1] else "") + f" · {inv[2]} uses" if inv else None
         timeline.add(member.id, "member", "Joined" + (f" · {invite}" if invite else ""))
-        if not (young or flagged or member.bot):   # a normal join is one line
-            return await log_staff(g, "", kind="Activity", event="join", embed=log_card(
-                None, f"**Joined** {member.mention} · member {g.member_count:,}"))
-        lines = [f"{member.mention} · member {g.member_count:,}",
-                 f"Account made {when(member.created_at.timestamp())}" + (" · **new account**" if young else "")]
-        if invite:
+        age = span((discord.utils.utcnow() - member.created_at).total_seconds())
+        lines = [f"**Joined** · member {g.member_count:,} · account {age} old" + (" · **new account**" if young else "")]
+        if invite and (young or flagged or member.bot):
             lines.append(invite)
         if flagged:
             lines.append("**Discord flags this account as a likely spammer**")
         if member.bot:
             lines.append("**Bot**")
         await log_staff(g, "", kind="Activity", event="join", embed=log_card(
-            "Joined", "\n".join(lines), tone="wait" if young or flagged else "neutral", user=member))
+            None, "\n".join(lines), tone="wait" if young or flagged else "neutral", user=member))
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        names.remember(member)
         timeline.add(member.id, "member", "Left")
-        joined = f" · joined {when(member.joined_at.timestamp())}" if member.joined_at else ""
-        if not is_staff(member):                   # a normal leave is one line
+        stayed = f" · stayed {span(time.time() - member.joined_at.timestamp())}" if member.joined_at else ""
+        if not is_staff(member):
             return await log_staff(member.guild, "", kind="Activity", event="leave", embed=log_card(
-                None, f"**Left** {member.mention}{joined}"))
+                None, f"**Left**{stayed}", user=member))
         roles = [r.mention for r in reversed(member.roles) if not r.is_default()]
         await log_staff(member.guild, "", kind="Activity", event="leave", embed=log_card(
-            "Staff member left", f"{member.mention}{joined}\nRoles " + " ".join(roles)[:900], tone="wait", user=member))
+            "Staff member left", f"**Left**{stayed}\nRoles " + " ".join(roles)[:900], tone="wait", user=member))
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):

@@ -133,6 +133,9 @@ async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", event: s
         text = ""
     if kind == "Security":
         note_alert(getattr(kw.get("embed"), "title", None))
+    from . import names
+    for e in ([kw["embed"]] if kw.get("embed") else []) + list(kw.get("embeds") or []):
+        await names.fill_embed(e)
     try:
         return await target.send(text or None, allowed_mentions=kw.pop("allowed_mentions", discord.AllowedMentions.none()),
                                  **kw)

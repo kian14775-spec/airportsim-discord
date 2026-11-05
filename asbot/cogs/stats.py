@@ -10,7 +10,7 @@ import datetime as dt
 import discord
 from discord.ext import commands, tasks
 
-from .. import cards, db, ui
+from .. import cards, db, names, ui
 from ..core import cfg, channel, game_stats, game_votes, group_info, log
 from ..panels import drop_panel
 
@@ -129,10 +129,10 @@ def weekly_card(end: dt.date) -> cards.CardView:
                 if gaps else "Every ticket had an instant answer.")
     slow = sorted((r for r in rows if r["first_reply"]), key=lambda r: -(r["first_reply"] - (r["handed"] or r["created"])))
     slow_text = "\n".join(f"`{r['id']:04d}` {round((r['first_reply'] - (r['handed'] or r['created'])) / 60)} min"
-                          + (f" · <@{r['claimed_by']}>" if r["claimed_by"] else "") for r in slow[:3]) or "-"
+                          + (f" · {names.who(r['claimed_by'])}" if r["claimed_by"] else "") for r in slow[:3]) or "-"
     team = db.q("SELECT claimed_by, COUNT(*) n FROM tickets WHERE status='closed' AND closed BETWEEN ? AND ? "
                 "AND claimed_by IS NOT NULL GROUP BY claimed_by ORDER BY n DESC LIMIT 5", a, b)
-    team_text = " · ".join(f"<@{r['claimed_by']}> {r['n']}" for r in team) or "-"
+    team_text = " · ".join(f"{names.who(r['claimed_by'])} {r['n']}" for r in team) or "-"
     parts = [
         cards.title("Weekly support report", f"{end - dt.timedelta(days=7):%d %b} to {end - dt.timedelta(days=1):%d %b}"),
         cards.divider(),

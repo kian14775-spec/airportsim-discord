@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import cards, db, timeline, ui
+from .. import cards, db, names, timeline, ui
 from ..core import staff_only
 from .community import template_files
 from .forums import FeedbackModal, RpModal
@@ -272,7 +272,7 @@ class MemberPick(discord.ui.UserSelect):
         from .strikes import RemoveStrike, active, strikes_line
         e = ui.card(m.display_name, ui.kv(("Discord", m.mention), ("Roblox", roblox), ("Joined", joined),
                                           ("Tickets", tl), ("Strikes", strikes_line(m.id))), thumb=m.display_avatar.url)
-        e.add_field(name="Timeline", value=timeline.lines(m.id)[:1024] or "Nothing yet.", inline=False)
+        e.add_field(name="Timeline", value=names.swap(timeline.lines(m.id), 1024) or "Nothing yet.", inline=False)
         from ..transcripts import HistoryButton
         v = discord.ui.View(timeout=600)
         if tickets:

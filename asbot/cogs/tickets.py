@@ -24,7 +24,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import db, opencloud
+from .. import db, names, opencloud
 from ..core import (cfg, channel, embed, is_staff, linked_roblox, log, log_staff, role, role_named,
                     roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
@@ -156,11 +156,11 @@ def control_card(t) -> discord.Embed:
     e = embed(f"{dot} Ticket {t['id']:04d} · {topic_label(t['topic'])}", colour=discord.Colour(colour))
     e.add_field(name="Status", value=words)
     e.add_field(name="Priority", value=PRIORITIES.get(t["priority"], "Normal"))
-    e.add_field(name="Claimed by", value=f"<@{t['claimed_by']}>" if t["claimed_by"] else "Nobody yet")
+    e.add_field(name="Claimed by", value=names.who(t["claimed_by"]) if t["claimed_by"] else "Nobody yet")
     e.add_field(name="Opened", value=f"<t:{int(t['created'])}:R>")
     last = t["last_activity"] or t["created"]
     e.add_field(name="Last message", value=f"<t:{int(last)}:R>")
-    e.add_field(name="Member", value=f"<@{t['user_id']}>")
+    e.add_field(name="Member", value=names.who(t["user_id"]))
     e.set_footer(text=CARD_FOOTER)
     return e
 
@@ -192,7 +192,7 @@ async def gather_profile(guild: discord.Guild, user: discord.abc.User, typed: st
 
 
 def member_text(p: dict, past: int) -> str:
-    lines = [f"<@{p['id']}> · `{p['name']}`"]
+    lines = [f"{names.who(p['id'])} · `{p['name']}`"]
     bits = [f"Discord account <t:{p['created']}:R>"]
     if p.get("joined"):
         bits.append(f"joined <t:{p['joined']}:R>")
@@ -230,7 +230,7 @@ def staff_card(t) -> discord.ui.LayoutView:
     p = d.get("profile") or {"id": t["user_id"], "name": str(t["user_id"]), "created": int(t["created"])}
     past = db.one("SELECT COUNT(*) n FROM tickets WHERE user_id=? AND status='closed'", t["user_id"])["n"]
     last = t["last_activity"] or t["created"]
-    claimed = f"<@{t['claimed_by']}>" if t["claimed_by"] else "nobody"
+    claimed = names.who(t["claimed_by"]) if t["claimed_by"] else "nobody"
     head = cards.title(f"{dot} {t['id']:04d} · {topic_label(t['topic'])}",
                        f"**{words}**\n-# opened <t:{int(t['created'])}:R> · last message <t:{int(last)}:R> · "
                        f"priority {PRIORITIES.get(t['priority'], 'Normal').lower()} · claimed by {claimed}")
@@ -526,8 +526,8 @@ def summary_card(t) -> discord.Embed:
     mins = round(((t["closed"] or db.now()) - t["created"]) / 60)
     dur = f"{mins} min" if mins < 120 else f"{round(mins / 60, 1)} h"
     e = embed(f"Ticket {t['id']:04d} · {topic_label(t['topic'])}", colour=discord.Colour(GREY))
-    e.add_field(name="Member", value=f"<@{t['user_id']}>")
-    e.add_field(name="Handled by", value=f"<@{t['claimed_by']}>" if t["claimed_by"] else "Nobody claimed")
+    e.add_field(name="Member", value=names.who(t["user_id"]))
+    e.add_field(name="Handled by", value=names.who(t["claimed_by"]) if t["claimed_by"] else "Nobody claimed")
     e.add_field(name="Rating", value="★" * t["rating"] if t["rating"] else "Not rated")
     e.add_field(name="Opened", value=f"<t:{int(t['created'])}:f>")
     e.add_field(name="Open for", value=dur)
@@ -1258,7 +1258,7 @@ class Tickets(commands.Cog):
         lines = []
         for i, r in enumerate(rows, 1):
             rating = f"{r['r']:.1f}★" if r["r"] else "no ratings"
-            lines.append(f"**{i}.** <@{r['claimed_by']}> · {r['n']} closed · {rating} · "
+            lines.append(f"**{i}.** {names.who(r['claimed_by'])} · {r['n']} closed · {rating} · "
                          f"{round((r['f'] or 0) / 60)} min first reply")
         e.add_field(name="Leaderboard", value="\n".join(lines) or "No closed tickets yet.", inline=False)
         return e
