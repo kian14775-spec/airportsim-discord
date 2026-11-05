@@ -73,7 +73,8 @@ def known_issue(text: str) -> str | None:
     from .news import status
     words = {faq.stem(w) for w in faq.WORD.findall(text.lower())}
     for issue in status().get("issues", []):
-        keys = {faq.stem(w) for w in faq.WORD.findall(issue.lower()) if len(w) > 3 and w not in STOPWORDS}
+        keys = {faq.stem(w) for w in faq.WORD.findall(issue.lower()) if len(w) > 3 and w not in STOPWORDS
+                and w not in ("issue", "issues", "problem", "problems")}
         if keys and len(keys & words) >= min(2, len(keys)):
             return issue
     return None
@@ -83,8 +84,8 @@ def issue_reply(issue: str) -> str:
     from .news import status
     nxt = status().get("next_update")
     return (f"Good news, we already know about this one: **{issue}**\n\nThe team is working on a fix"
-            + (f" (next update: {nxt})" if nxt else "") + ". You don't need to do anything, and we'll post in "
-            "announcements when it's fixed. Is that what you're seeing?")
+            + (f" (next update: {nxt})" if nxt else "") + ". You don't need to do anything, and we'll let you know "
+            "when it's fixed. Is that what you're seeing?")
 
 
 def card_data(tid: int) -> dict:
@@ -771,7 +772,7 @@ class Tickets(commands.Cog):
             return await interaction.followup.send("Support isn't set up yet. Try again later.", ephemeral=True)
         hcfg = cfg()["support"].get("helper", {})
         found = faq.match(f"{text} {extra}")
-        issue = known_issue(f"{text} {extra}") if topic_key in ("help", "bug", "other") else None
+        issue = known_issue(f"{text} {extra}") if topic_key in ("help", "bug", "purchase", "other") else None
         helping = bool((found or issue) and topic_key in hcfg.get("topics", []))
         first_id = "issue" if issue else (found["id"] if found else None)
         first_text = issue_reply(issue) if issue else (found["answer"] if found else "")
@@ -845,6 +846,11 @@ class Tickets(commands.Cog):
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
         await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
                                     + (" · Support Agent on it" if helping else ""), kind="Tickets", event="ticket_opened")
+        try:
+            from . import radar
+            await radar.note_ticket(self.guild, tid, topic_key, user.id, f"{text} {extra}")
+        except Exception:
+            log.exception("incident radar")
 
     # ---------- support helper (rule based: instant answers only, no AI) ----------
     async def helper_note(self, thread, text: str, what: str = "Support helper"):

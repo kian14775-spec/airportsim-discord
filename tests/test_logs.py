@@ -153,6 +153,40 @@ def test_unknown_person_is_looked_up_once():
     assert asyncio.run(names.fill("<@900>")) == "**Old member**" and calls == [900]
 
 
+def test_radar_groups_people_not_tickets():
+    from asbot.cogs import radar
+    s = radar.settings()
+    word = lambda i, u, t="help": {"id": i, "user": u, "topic": t, "words": radar.words_of("stuck on loading screen")}
+    assert radar.cluster([word(1, 1), word(2, 1), word(3, 2)], s, set()) is None      # 2 members, not 3
+    key, label, ids = radar.cluster([word(1, 1), word(2, 2), word(3, 3)], s, set())
+    assert key.startswith("word:") and ids == [1, 2, 3]
+    assert radar.cluster([word(1, 1), word(2, 2), word(3, 3)], s, {f"word:{w}" for w in word(1, 1)["words"]}) is None
+    bare = [{"id": i, "user": i, "topic": "bug", "words": {}} for i in (1, 2, 3)]
+    assert radar.cluster(bare, s, set())[0] == "topic:bug"
+    assert radar.cluster([{**b, "topic": "help"} for b in bare], s, set()) is None    # help alone is too common
+    assert "game" not in " ".join(radar.words_of("the game is not working please help"))
+
+
+def test_radar_raises_once_then_collects():
+    from asbot.cogs import radar
+    now = db.now()
+    posts = []
+
+    async def post(guild, iid):
+        posts.append(iid)
+
+    async def refresh(guild, iid):
+        pass
+
+    with mock.patch.object(radar, "post_new", post), mock.patch.object(radar, "refresh", refresh):
+        for uid in (71, 72, 73, 74):
+            tid = db.run("INSERT INTO tickets(user_id, topic, status, created) VALUES(?, 'help', 'open', ?)", uid, now)
+            db.kv_set(f"tcard:{tid}", {"problem": "my landing gear vanished"})
+            asyncio.run(radar.note_ticket(None, tid, "help", uid, "my landing gear vanished"))
+    assert len(posts) == 1
+    assert len(__import__("json").loads(radar.incident(posts[0])["tickets"])) == 4
+
+
 def test_span_reads_the_same_forever():
     assert [span(s) for s in (40, 59 * 60, 3 * 3600, 86400, 40 * 86400, 800 * 86400)] ==         ["40 sec", "59 min", "3 hours", "1 day", "1 month", "2 years"]
 

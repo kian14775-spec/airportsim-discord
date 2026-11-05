@@ -140,7 +140,7 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
         matches[role_ref(spec.key)] = have.id
         role_key_by_id[have.id] = spec.key
         diff = {}
-        for f in ("name", "color", "hoist", "mentionable", "permissions"):
+        for f in ("name", "mentionable", "permissions"):   # colours + hoist: tools/roles_style.py (gradients)
             want = getattr(spec, f)
             if want is not None and want != getattr(have, f):
                 diff[f] = want

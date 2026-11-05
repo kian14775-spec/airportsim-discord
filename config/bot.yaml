@@ -113,6 +113,12 @@ guard:
   nuke:  {deletes: 3, removals: 5, seconds: 60}   # per person, then their dangerous roles are taken away
 
 # Logs (asbot/cogs/modlog.py)
+radar:                     # incident radar (asbot/cogs/radar.py)
+  window_min: 60           # look back this far
+  min_members: 3           # different members with the same word or topic
+  topics: [bug, purchase]  # topics that count on their own, without a shared word
+  cooldown_hours: 2        # don't raise the same thing again this soon
+
 logs:
   keep_messages_days: 7    # text of recent messages, so deletes and edits always show what was said
   keep_images_hours: 12    # copies of posted images/videos, posted again if the message is deleted
