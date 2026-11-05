@@ -1,6 +1,8 @@
 # Airport Simulator Discord bot - HANDOFF
 
 ## RESUME HERE (2026-11-05, s23)
+s23b ROLES APPLIED LIVE: tools/roles_style.py = order + gradients (backup backups/roles_2026-11-05/roles.json, git-ignored). Founder, Admin, Support Team now shown apart. Layout planner no longer touches role colour/hoist, so an apply won't flatten gradients. `*` role is above the bot, untouched (#607D8B). Re-made roles still there: ARFF Commissioner, Leg, Unverified.
+s23b INCIDENT RADAR: asbot/cogs/radar.py committed (b256ab8), DEPLOY WAITS ON KIAN'S OK. Tests 15/15; buttons not tried in Discord yet.
 s23 NAMES FIX: LIVE (deploy 5650897b, 2026-11-05, selftest 50/50 via PC with a temp ASBOT_DATA + seed/state; railway ssh needs a key, none set up). Embed <@id> only renders if the viewer's app knows the user, so people who left showed raw ids + Discord's no-access box. asbot/names.py (names table, seeded from members on_ready, kept on join/leave, fetch_user for older ids) rewrites <@id> in everything through log_staff; ticket/stats cards call names.who() directly. Join/leave = avatar + name + id cards, 'stayed 59 min' (the old 'joined 7 hours ago' drifted). After deploy CHECK in Discord: profile links open for members who are here; old cards stay as they were. tests/test_logs.py 13/13.
 
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve",
@@ -79,3 +81,4 @@ State (key -> Discord id) lives in state/ids_<guild>.json ON THE MACHINE THAT AP
 - 2026-10-31 s21b: deployed (2nd try; 1st upload failed), AutoMod tuned (5/6), mass-ping guard, /help fixed (Traveler slash cmds denied in general/media), old #logs deleted after backup, selftest 54/54. ARCHIVE tickets wait on Kian.
 - 2026-11-01 s22: logs 7 -> 3 channels (Kian: minimal, modern), cut list muted, one-line joins/leaves, typo edits skipped, member timeline, live status card, tools/logs_merge.py, tests/test_logs.py. Deployed with Kian's OK, 3 channels renamed, all 3 seen posting, 4 old deleted after backup, selftest 50/50.
 - 2026-11-05 s23: log cards show real names (asbot/names.py), join/leave cards with avatar + 'stayed X'; deployed, selftest 50/50; no real join/leave card seen yet.
+- 2026-11-05 s23b: role order + gradients live; incident radar built (3+ members, same word or bug/purchase topic, 1 h), deploy pending.
