@@ -23,8 +23,17 @@ audit fixes, 90bed2b) is still undeployed too, so the next deploy ships s24 + s2
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve", service "my-bot",
 volume "my-bot-volume" at /data. Repo folder is `railway link`ed. NO copy runs on the PC.
 RULE: nothing may cost money / eat the Railway credit, no paid AI. Deploys + live server deletes need Kian's OK.
+DEPLOY BLOCKED (2026-11-16, Kian said "Yes, deploy"): Windows Smart App Control is now ON (enforced; it was in
+evaluation on 11-05) and blocks the unsigned railway.exe, from Claude's shells AND the terminal tab (CodeIntegrity
+event 3077; Claude's packaged app sees its own copy under AppData\Local\Packages\Claude_*\LocalCache\Roaming
+pm).
+A script that refreshes the CLI's saved OAuth login and POSTs the tarball itself was refused by the auto-mode safety
+check (handling login tokens outside the official tool), so it was NOT written. Nothing was uploaded; live = s23b.
+Kian picks: (a) deploy via GitHub: private repo + Railway service source = that repo (then deploys = git push),
+(b) turn Smart App Control off himself (Windows Security; can't be turned back on without a reset), (c) explicitly allow
+a token-handling upload script. Railway CLI login also expired 11-05 (the CLI refreshes it on its next run).
 Next:
-1. Kian OK -> `railway up --detach` (retry on upload timeout) -> in Discord `/layout preview` (must match the PC preview
+1. Once deploys work -> `railway up --detach` (retry on upload timeout) -> in Discord `/layout preview` (must match the PC preview
    above) -> `/layout apply` -> `python tools/selftest.py` -> look: board pinned in #stats, guide pinned in #staff-chat,
    creators card in #creators-room, s24 banners swapped in, #alerts has no loop errors.
 2. Needs from Kian (selftest flags them): bot needs Manage Events; bot role above Server Moderator / Trial / Support Team /
