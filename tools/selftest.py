@@ -97,7 +97,7 @@ async def run(client: discord.Client):
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
     # 2026-11-16 systems: Staff Duty rooms, the live counter, events, promotions (need /layout apply after deploy)
-    for key in ("leads", "mod_room", "creators_room", "live_count"):
+    for key in ("leads", "mod_room", "creators_room"):
         c = ch(key)
         check(c is not None, f"#{key} exists" + ("" if c else " -> run /layout preview + apply"))
         if c is None:

@@ -200,7 +200,7 @@ duty:                       # Staff Duty: points for real work, weekly board, ch
     manual:         {pts: 0, label: Credit from a lead}
 
 pulse:                      # keeping the server alive (cogs/pulse.py)
-  live_count: true          # channel name "Playing now: 1,234" (key live_count), renamed at most every 10 min
+  live_count: false         # Kian deleted #playing-now on 2026-11-16: off (needs a live_count channel in the layout)
   verify_nudge_hours: 24    # one friendly DM to members who haven't verified after this long (never twice)
   verify_nudge_per_run: 4   # at most this many every 10 min (older unverified members are reached slowly)
   topic_hour: 18            # UTC hour for the daily question in #general (skipped if chat was busy in the last 30 min)

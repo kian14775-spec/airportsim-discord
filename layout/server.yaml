@@ -60,7 +60,6 @@ categories:
     was: [STAY TUNED]
     perms: readonly
     channels:
-      - {key: live_count, name: playing-now, type: voice, perms: stat}   # the bot renames it: "Playing now: 1,234"
       - {key: announcements, name: announcements, was: [announcements, news], type: announcement, topic: "Big news about Airport Simulator."}
       - {key: devlogs, name: dev-logs, was: [dev-logs], type: announcement, topic: "Changelogs, polls and sneak peeks."}
       - {key: socials, name: socials, was: [socials], type: announcement, topic: "Our latest posts on social media."}
