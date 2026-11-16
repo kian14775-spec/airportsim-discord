@@ -276,6 +276,7 @@ def test_guide_pages_read_well():
         title, body = duty.page_text(key)
         assert title and body and "{" not in body, key
         assert len(body) < 1800, (key, len(body))
+        duty.page_view(key)          # what "How this works" sends: it crashed live once (Select custom_id=None)
     assert "Moderation 12" in duty.page_text("duty")[1]
 
 

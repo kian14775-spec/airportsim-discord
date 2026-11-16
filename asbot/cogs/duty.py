@@ -46,7 +46,10 @@ def page_view(key: str) -> cards.CardView:
 
 class GuidePick(discord.ui.Select):
     def __init__(self, persistent: bool = True):
-        super().__init__(placeholder="Pick a topic", custom_id="asbot:guide:pick" if persistent else None,
+        # A Select refuses custom_id=None (discord.py 2.7): leave it out for the private copy. This crash made
+        # every "How this works" button say "not responding" (2026-11-16).
+        extra = {"custom_id": "asbot:guide:pick"} if persistent else {}
+        super().__init__(placeholder="Pick a topic", **extra,
                          options=[discord.SelectOption(label=p["title"][:100], value=k)
                                   for k, p in list(guide_pages().items())[:25]] or
                          [discord.SelectOption(label="Staff guide", value="start")])
