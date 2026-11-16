@@ -1,6 +1,21 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-11-16, s26b)
+## RESUME HERE (2026-11-16, s26c)
+s26c (11-16 17:50 UTC): CARD REVAMP LIVE (7b0c529 + e3e068d), seen in Discord via Kian's Chrome.
+- Kian's taste (memory feedback_discord-cards-clean.md): NO coloured side stripe on any card (cards.container ignores
+  accent), NO progress bars (board = name + "3 / 10" + done), banners + headings + dividers only.
+- rules-and-verify = 1 message: Welcome card + one card Rules -> Get started (Verify blue + Get help = /help privately,
+  since unverified can't see #support) -> pings/platform menus.
+- YAML trap fixed: a bare " #" in config/bot.yaml is a comment -> rule 5 lost "#support", app question lost "#chat...".
+  Quote any yaml string with " #" in it (test guards both).
+- Creators = every platform: Link my channels (YouTube/TikTok/Twitch + Kick/Instagram/X), Share a post (3/day, deduped
+  by clean_url), Going live (Twitch/TikTok/YouTube/Kick, once per 4 h); YouTube still auto via RSS. Tables
+  creator_links, creator_posts. Monthly top creators counts creator_posts.
+- cards.pin_quietly (no "pinned a message" lines), forum_card lock, support card shows problems as a ⚠️ line.
+- tools/tidy_channels.py (dry-run; --apply): removes ONLY the bot's own duplicate one-of-a-kind cards + pin notices in
+  its card channels, backup to backups/tidy_*.json. Ran twice today: 3 pin notices + 1 old creators card removed.
+  Channel check after the last deploy: "Nothing to tidy".
+- Repo still PUBLIC (Kian didn't answer; don't re-ask unless he brings it up).
 s26b (11-16 17:10 UTC): FIXED + LIVE. Cause: the Railway service's Source Repo was the OLD repo kian14775-spec/my-bot
 (branch main), so pushes to airportsim-discord never deployed. Switched it (Kian's Chrome, Claude in Chrome) to
 kian14775-spec/airportsim-discord, branch master, auto-deploy on; also set dashboard Custom Start Command `python bot.py`
@@ -9,9 +24,7 @@ height now pass). Push -> auto-deploy PROVEN (0095450 = card-race fix: on_ready 
 #creators-room card twice; cards.post_card now locks per card name; test added). Seen live: Staff board pinned in
 #stats, Staff guide pinned in #staff-chat, creators card, #leads 30-day baseline report (20/26 staff show zero activity:
 real data), #alerts clean. Not eyeballed: s24 banners on the public cards.
-OPEN (need Kian): (1) repo airportsim-discord is PUBLIC (history scanned: no token/.env ever committed) -> make it
-private? (Railway keeps access via its GitHub app). (2) delete the extra pinned creators card from the first boot
-(older of the two 17:05 "Creators and events" posts; the tracked one is the one edited at 17:09).
+(Old s26b open items: the extra creators card is gone (s26c tidy); repo visibility still open.)
 s25 = built EVERY system in the restructure plan (Kian, s24: "do whatever u wanna do so u can add everything" + "make sure
 new staff know how to use or operate everything"). s24 hit the 5-h limit mid-build; its uncommitted start (points.py,
 config, layout) was picked up. ALL BUILT + COMMITTED (640a031), NOT DEPLOYED. Live = s23b (c83c0053); s24 (banners v2 +
@@ -104,3 +117,4 @@ left alone; encode hand-made perms with `external: true` roles + per-channel `pe
 - 2026-11-16 s24: audit (2 reports) + fixes (C1, H1-H6, layout C1/H1-H3, tidy), banners v2 from the AS2 aircraft hero shots (title behind the jet), server banner + splash, restructure plan (proposal). 56/56 offline tests. Committed 90bed2b, NOT deployed (needs Kian's OK).
 - 2026-11-16 s25: built every restructure-plan system (Staff Duty, departments, bug loop, pulse, events, creators, on-duty routing, staff guide); layout yaml matched to live (role names, hand-made perms); 7 test files pass. Committed 640a031, NOT deployed (needs Kian's OK).
 - 2026-11-16 s26b: FIXED: Railway source repo was the old my-bot repo -> switched to airportsim-discord/master in Kian's Chrome + dashboard start cmd; s24+s25 LIVE, selftest 63/63; push->deploy proven with the card-race fix (0095450). Repo found PUBLIC (no secrets in history).
+- 2026-11-16 s26c: card revamp LIVE: no side stripes, no bars (Kian), rules + get started joined, YAML ' #' comment bug fixed (rule 5 + app question), creators on every platform (link/share/live), pin notices gone, tools/tidy_channels.py (ran: 3 pin notices + 1 old creators card removed, backups/tidy_*). Seen in Discord.
