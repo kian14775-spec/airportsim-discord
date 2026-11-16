@@ -17,7 +17,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import cards, db, ui
-from ..core import channel, embed, log
+from ..core import channel, embed, guarded, log
 from ..renamer import rename_soon
 from .community import UPVOTE, star
 
@@ -213,6 +213,7 @@ class Forums(commands.Cog):
 
     # ---------- timers ----------
     @tasks.loop(hours=6)
+    @guarded
     async def weekly(self):
         now = dt.datetime.now(dt.timezone.utc)
         week = f"{now:%G-W%V}"
@@ -232,6 +233,7 @@ class Forums(commands.Cog):
         db.kv_set("digest_week", week)
 
     @tasks.loop(hours=24)
+    @guarded
     async def daily(self):
         forum = channel(self.guild, "rp_servers")
         if not isinstance(forum, discord.ForumChannel):
@@ -244,15 +246,19 @@ class Forums(commands.Cog):
             if warned and last > warned["warned"] + 60:   # the owner (or anyone) posted after the warning
                 db.run("DELETE FROM rp_stale WHERE thread_id=?", th.id)
                 continue
-            if not warned and db.now() - last >= STALE_DAYS * 86400:
-                await th.send(f"{th.owner.mention if th.owner else 'Owner'}: is this still active? Post anything "
-                              f"here to keep it listed, otherwise it's archived in {ARCHIVE_AFTER_WARN_DAYS} days.")
-                db.run("INSERT INTO rp_stale VALUES(?, ?)", th.id, db.now())
-            elif warned and db.now() - warned["warned"] > ARCHIVE_AFTER_WARN_DAYS * 86400:
-                await th.edit(archived=True)
-                db.run("DELETE FROM rp_stale WHERE thread_id=?", th.id)
+            try:   # one locked post must not stop the rest
+                if not warned and db.now() - last >= STALE_DAYS * 86400:
+                    await th.send(f"{th.owner.mention if th.owner else 'Owner'}: is this still active? Post anything "
+                                  f"here to keep it listed, otherwise it's archived in {ARCHIVE_AFTER_WARN_DAYS} days.")
+                    db.run("INSERT INTO rp_stale VALUES(?, ?)", th.id, db.now())
+                elif warned and db.now() - warned["warned"] > ARCHIVE_AFTER_WARN_DAYS * 86400:
+                    await th.edit(archived=True)
+                    db.run("DELETE FROM rp_stale WHERE thread_id=?", th.id)
+            except discord.HTTPException as e:
+                log.warning("rp post %s: %s", th.id, e)
 
     @tasks.loop(hours=1)
+    @guarded
     async def contest_board(self):
         start = db.kv_get("contest_start")
         forum = channel(self.guild, "liveries")

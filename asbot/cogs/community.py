@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 
 from .. import cards, db, opencloud, ui
 from ..paths import DATA
-from ..core import cfg, channel, embed, is_staff, log, log_staff, role, staff_only
+from ..core import cfg, channel, embed, guarded, is_staff, log, log_staff, role, staff_only
 
 UPVOTE = "👍"
 TEMPLATES = DATA / "data" / "templates"
@@ -278,6 +278,7 @@ class Community(commands.Cog):
                                         ephemeral=True)
 
     @tasks.loop(hours=1)
+    @guarded
     async def contest_auto(self):
         """Runs by itself: on the 1st of each month (UTC) last month's contest ends and a new one starts.
         Turn off with contest: {auto: false} in config/bot.yaml."""

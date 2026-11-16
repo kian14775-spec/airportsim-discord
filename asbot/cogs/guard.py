@@ -32,7 +32,8 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import cards, db, timeline, ui
-from ..core import ALERT_HOURS, cfg, channel, is_staff, log, log_card, log_channel, log_staff, role, role_named
+from ..core import (ALERT_HOURS, cfg, channel, guarded, is_staff, log, log_card, log_channel, log_staff, role,
+                    role_named)
 
 A = discord.AuditLogAction
 DANGER = ("administrator", "manage_guild", "manage_roles", "manage_channels", "manage_webhooks",
@@ -42,6 +43,7 @@ NEEDED = ("view_audit_log", "manage_guild", "manage_roles", "manage_messages", "
 DESTROY = {A.channel_delete, A.role_delete, A.webhook_create, A.emoji_delete, A.sticker_delete}
 REMOVE = {A.ban, A.kick, A.member_prune}
 ESCALATE = (None, 60, 1440)   # minutes for the 2nd and 3rd hit in 24 h (1st = spam.timeout_minutes)
+HANDLE_SECONDS = 60           # one card per burst: more hits from the same member this soon are only deleted
 
 # ---------- links ----------
 OFFICIAL = ("discord.com", "discord.gg", "discord.gift", "discordapp.com", "discordapp.net", "discord.media",
@@ -222,6 +224,7 @@ class Guard(commands.Cog):
         self.staff_seen: dict[tuple[int, int], float] = {}        # (channel, staff id) -> last message
         self.actions: dict[int, deque] = defaultdict(deque)       # actor -> (time, destroy|remove)
         self.contained: dict[int, float] = {}
+        self.handling: dict[tuple[int, str], float] = {}           # (user, "punish"|"hacked") -> when it started
         self.checked = False
         self.tick.start()
 
@@ -333,7 +336,20 @@ class Guard(commands.Cog):
             except discord.HTTPException:
                 pass
 
+    def busy(self, member: discord.Member, *kinds: str) -> bool:
+        """Already timed out, or one of `kinds` is being handled for them: the caller only deletes.
+        Otherwise marks kinds[0]. No await in here, so hits that land together can't each start one."""
+        now = time.time()
+        if (isinstance(member, discord.Member) and member.is_timed_out()) or \
+                any(now - self.handling.get((member.id, k), 0) < HANDLE_SECONDS for k in kinds):
+            return True
+        self.handling[(member.id, kinds[0])] = now
+        return False
+
     async def punish(self, member: discord.Member, reason: str, msgs: list[discord.Message]):
+        if self.busy(member, "punish", "hacked"):
+            return await self.remove(msgs)
+        self.history.pop(member.id, None)   # before any await: messages arriving meanwhile start a fresh count
         now = time.time()
         hits = self.hits[member.id]
         while hits and now - hits[0] > 86400:
@@ -342,7 +358,6 @@ class Guard(commands.Cog):
         n = len(hits)
         minutes = gs()["spam"]["timeout_minutes"] if n == 1 else ESCALATE[min(n, 3) - 1]
         await self.remove(msgs)
-        self.history.pop(member.id, None)
         note = ""
         try:
             await member.timeout(dt.timedelta(minutes=minutes), reason=f"Auto: {reason}")
@@ -364,8 +379,10 @@ class Guard(commands.Cog):
 
     async def hacked(self, m: discord.Message, reason: str, msgs: list[discord.Message]):
         member = m.author
-        await self.remove(msgs)
+        if self.busy(member, "hacked"):   # the same scam in 8 channels = one alert, not 8
+            return await self.remove(msgs)
         self.history.pop(member.id, None)
+        await self.remove(msgs)
         note = ""
         try:
             await member.timeout(dt.timedelta(hours=24), reason=f"Auto: looks hacked ({reason})")
@@ -462,15 +479,19 @@ class Guard(commands.Cog):
                                       f"under {r['new_days']} days old in {r['new_seconds'] // 60} min",
                                       joined=[j[1] for j in self.joins])
 
-    async def start_lockdown(self, g: discord.Guild, minutes: int, reason: str, by=None, joined=()):
+    async def start_lockdown(self, g: discord.Guild, minutes: int, reason: str, by=None, joined=()) -> bool:
+        """False if one is already on. The state is saved before the first await, so joins that land
+        while Discord is being told see it and are added to this lockdown instead of starting another."""
+        if db.kv_get("guard:lockdown"):
+            return False
         until = discord.utils.utcnow() + dt.timedelta(minutes=min(minutes, 1440))
+        state = {"until": until.timestamp(), "reason": reason, "joined": list(joined), "by": getattr(by, "id", None)}
+        db.kv_set("guard:lockdown", state)
         note = ""
         try:
             await g.edit(invites_disabled_until=until, dms_disabled_until=until, reason=f"Lockdown: {reason[:400]}")
         except discord.HTTPException as e:
             note = f"\nCouldn't pause invites/DMs: {e.text or e}"
-        state = {"until": until.timestamp(), "reason": reason, "joined": list(joined), "by": getattr(by, "id", None)}
-        db.kv_set("guard:lockdown", state)
         text, mentions = alert_ping(g)
         v = discord.ui.View(timeout=None)
         v.add_item(LockdownAction("end"))
@@ -479,6 +500,7 @@ class Guard(commands.Cog):
             "Lockdown on", f"{reason}\n\nNew joins and DMs between members are paused until "
                            f"<t:{int(until.timestamp())}:t> (<t:{int(until.timestamp())}:R>), it lifts by itself.{note}",
             tone="bad", by=by))
+        return True
 
     async def end_lockdown(self, g: discord.Guild, by=None, timer: bool = False):
         state = db.kv_get("guard:lockdown")
@@ -510,6 +532,7 @@ class Guard(commands.Cog):
         return n
 
     @tasks.loop(minutes=1)
+    @guarded
     async def tick(self):
         state = db.kv_get("guard:lockdown")
         g = self.bot.get_guild(self.bot.guild_id)
@@ -521,6 +544,7 @@ class Guard(commands.Cog):
             for k in [k for k, q in d.items() if not q or now - (q[-1][0] if isinstance(q[-1], tuple) else q[-1]) > 86400]:
                 d.pop(k, None)
         self.staff_seen = {k: t for k, t in self.staff_seen.items() if now - t < 3600}
+        self.handling = {k: t for k, t in self.handling.items() if now - t < HANDLE_SECONDS}
         if g:
             try:
                 await self.update_status(g)
@@ -538,7 +562,9 @@ class Guard(commands.Cog):
         if not interaction.user.guild_permissions.kick_members:
             return await interaction.response.send_message("You can't do that.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
-        await self.start_lockdown(interaction.guild, minutes, reason, by=interaction.user)
+        if not await self.start_lockdown(interaction.guild, minutes, reason, by=interaction.user):
+            return await interaction.followup.send("A lockdown is already on. `/lockdown end` first to start a new "
+                                                   "one.", ephemeral=True)
         await interaction.followup.send(f"Lockdown on for {minutes} min. Details in #alerts.", ephemeral=True)
 
     @lockdown.command(name="end", description="Let people join and DM again")

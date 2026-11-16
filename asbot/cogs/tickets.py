@@ -25,7 +25,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .. import db, names, opencloud
-from ..core import (cfg, channel, embed, is_staff, linked_roblox, log, log_staff, role, role_named,
+from ..core import (cfg, channel, embed, guarded, is_staff, linked_roblox, log, log_staff, role, role_named,
                     roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
 from .. import cards, faq, ticketlist, transcripts, ui
@@ -60,6 +60,12 @@ def ticket(tid: int):
 
 def open_ticket_for(user_id: int):
     return db.one("SELECT * FROM tickets WHERE user_id=? AND status!='closed' ORDER BY id DESC", user_id)
+
+
+def drop_ticket(tid: int) -> None:
+    """Undo a ticket that never got its inbox post, so it can't block the member."""
+    db.run("DELETE FROM tickets WHERE id=?", tid)
+    db.run("DELETE FROM kv WHERE key IN (?, ?, ?)", f"tbot:{tid}", f"tcard:{tid}", f"ticket_roblox:{tid}")
 
 
 def is_command(text: str) -> bool:
@@ -356,9 +362,11 @@ class TicketButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:t
             rid = db.kv_get(f"ticket_roblox:{t['id']}")
             if not rid:
                 return await interaction.response.send_message("No Roblox account on this appeal.", ephemeral=True)
+            await interaction.response.defer(thinking=True)   # Open Cloud can take longer than Discord waits
             ok = await opencloud.unban(rid)
-            await interaction.response.send_message(
-                f"Unbanned in game by {member.mention}." if ok else "Unban failed (Open Cloud key missing or no access).",
+            await interaction.followup.send(
+                f"Unbanned in game by {member.mention}." if ok else "Unban failed (Open Cloud key missing, no access "
+                                                                    "or Roblox didn't answer).",
                 allowed_mentions=discord.AllowedMentions.none())
             if ok:
                 await cog.send_to_user(t, embed("You've been unbanned",
@@ -810,39 +818,58 @@ class Tickets(commands.Cog):
         hello = cards.CardView(cards.container(*parts, accent=ui.BRAND, banner_name="support"))
         try:
             await user.send(view=hello, files=cards.files_for("support"))
-        except discord.Forbidden:
-            db.run("DELETE FROM tickets WHERE id=?", tid)
-            db.run("DELETE FROM kv WHERE key=?", f"tbot:{tid}")
+        except discord.HTTPException as e:
+            drop_ticket(tid)
             return await interaction.followup.send(
                 "I can't DM you. Turn on **Direct Messages** for this server (server name > Privacy Settings), "
-                "then try again.", ephemeral=True)
-        helper, flag = None, None
+                "then try again." if isinstance(e, discord.Forbidden) else
+                "Something went wrong opening your ticket. Please try again in a minute.", ephemeral=True)
+        made = None
+        try:   # no inbox post = no ticket: a half-made one would block the member for good
+            helper, flag = None, None
+            if helping:
+                helper = HELPER_ON + f"\n-# Sent {first_label}"
+            elif found:
+                flag = (f"-# ⚡ Instant answer {faq.label(found)} fits this, but {label.lower()} tickets always go "
+                        "to a person.")
+            else:
+                flag = "-# No instant answer fits this one. Fixed it? Press **Save fix** so the next member gets it."
+            if topic_key == "appeal" and username:
+                hit = await roblox_user_by_name(username)
+                if hit:
+                    db.kv_set(f"ticket_roblox:{tid}", hit["id"])
+                    ban = await opencloud.get_ban(hit["id"])
+                    rec = (f"{ban.get('displayReason') or 'no public reason'} · private: {ban.get('privateReason') or '-'}"
+                           if ban else ("not banned" if opencloud.available() else "Open Cloud key not set up, check "
+                                                                                   "by hand"))
+                    extra = (extra + "\n" if extra else "") + f"**Ban on record:** {rec}"
+            profile = await gather_profile(self.guild, user, username or None)
+            db.kv_set(f"tcard:{tid}", {"problem": text, "extra": extra, "profile": profile, "helper": helper,
+                                       "flag": flag, "matched": bool(found or issue), "first": first_label})
+            t = ticket(tid)
+            tags = [tg for tg in inbox.available_tags if tg.name in tag_names(t)]
+            made = await inbox.create_thread(name=title_of(t, user.name), view=staff_card(t), applied_tags=tags,
+                                             allowed_mentions=discord.AllowedMentions.none())
+            db.run("UPDATE tickets SET thread_id=? WHERE id=?", made.thread.id, tid)
+        except Exception:
+            log.exception("ticket %s open", tid)
+            drop_ticket(tid)
+            try:
+                if made:
+                    await made.thread.delete()
+            except discord.HTTPException:
+                pass
+            try:
+                await user.send(f"Sorry, ticket {tid:04d} didn't reach the team. Please open it again in a minute.")
+            except discord.HTTPException:
+                pass
+            return await interaction.followup.send("Something went wrong opening your ticket. Please try again in a "
+                                                   "minute.", ephemeral=True)
         if helping:
-            helper = HELPER_ON + f"\n-# Sent {first_label}"
-        elif found:
-            flag = (f"-# ⚡ Instant answer {faq.label(found)} fits this, but {label.lower()} tickets always go "
-                    "to a person.")
-        else:
-            flag = "-# No instant answer fits this one. Fixed it? Press **Save fix** so the next member gets it."
-        if topic_key == "appeal" and username:
-            hit = await roblox_user_by_name(username)
-            if hit:
-                db.kv_set(f"ticket_roblox:{tid}", hit["id"])
-                ban = await opencloud.get_ban(hit["id"])
-                rec = (f"{ban.get('displayReason') or 'no public reason'} · private: {ban.get('privateReason') or '-'}"
-                       if ban else ("not banned" if opencloud.available() else "Open Cloud key not set up, check "
-                                                                               "by hand"))
-                extra = (extra + "\n" if extra else "") + f"**Ban on record:** {rec}"
-        profile = await gather_profile(self.guild, user, username or None)
-        db.kv_set(f"tcard:{tid}", {"problem": text, "extra": extra, "profile": profile, "helper": helper,
-                                   "flag": flag, "matched": bool(found or issue), "first": first_label})
-        t = ticket(tid)
-        tags = [tg for tg in inbox.available_tags if tg.name in tag_names(t)]
-        made = await inbox.create_thread(name=title_of(t, user.name), view=staff_card(t), applied_tags=tags,
-                                         allowed_mentions=discord.AllowedMentions.none())
-        db.run("UPDATE tickets SET thread_id=? WHERE id=?", made.thread.id, tid)
-        if helping:
-            await self.helper_note(made.thread, first_text, f"Sent {first_label}")
+            try:
+                await self.helper_note(made.thread, first_text, f"Sent {first_label}")
+            except discord.HTTPException as e:
+                log.warning("ticket %s helper note: %s", tid, e)
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
         await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
                                     + (" · Support Agent on it" if helping else ""), kind="Tickets", event="ticket_opened")
@@ -1189,6 +1216,7 @@ class Tickets(commands.Cog):
 
     # ---------- timers ----------
     @tasks.loop(minutes=5)
+    @guarded
     async def timers(self):
         if not self.guild:
             return
@@ -1197,21 +1225,29 @@ class Tickets(commands.Cog):
         for t in db.q("SELECT * FROM tickets WHERE status NOT IN ('closed', 'bot', 'closing') AND first_reply IS NULL "
                       "AND nudged=0 AND COALESCE(handed, created)<?", now - NUDGE_AFTER):
             thread = await self.fetch_thread(t["thread_id"])
-            if thread:
-                await thread.send(f"⏰ No reply for 30 minutes. {team.mention if team else 'Support team'}, "
-                                  "can someone take this?", allowed_mentions=discord.AllowedMentions(roles=True))
+            try:
+                if thread:
+                    await thread.send(f"⏰ No reply for 30 minutes. {team.mention if team else 'Support team'}, "
+                                      "can someone take this?", allowed_mentions=discord.AllowedMentions(roles=True))
+            except discord.HTTPException as e:   # one locked post must not hold up the rest
+                log.warning("ticket %s nudge: %s", t["id"], e)
             db.run("UPDATE tickets SET nudged=1 WHERE id=?", t["id"])
         for t in db.q("SELECT * FROM tickets WHERE status='waiting' AND warned=0 AND last_activity<?", now - WARN_AFTER):
             await self.send_to_user(t, embed(f"Still need help with ticket {t['id']:04d}?",
                                              "Reply here if you do. Otherwise it closes by itself in 24 hours.",
                                              colour=discord.Colour(AMBER)))
             db.run("UPDATE tickets SET warned=1 WHERE id=?", t["id"])
-        for t in db.q("SELECT * FROM tickets WHERE status='waiting' AND warned=1 AND last_activity<?", now - CLOSE_AFTER):
-            await self.close(t, by=None, reason="auto-closed after 48 h without a reply")
-        for t in db.q("SELECT * FROM tickets WHERE status='bot' AND last_activity<?", now - WARN_AFTER):
-            await self.close(t, by=None, reason="closed, the member stopped answering the Support Agent")
-        for t in db.q("SELECT * FROM tickets WHERE status='closing' AND last_activity<?", now - WARN_AFTER):
-            await self.close(t, by=None, reason="closed, the member didn't answer within 24 h")
+        closes = [(t, "auto-closed after 48 h without a reply") for t in db.q(
+                      "SELECT * FROM tickets WHERE status='waiting' AND warned=1 AND last_activity<?", now - CLOSE_AFTER)]
+        closes += [(t, "closed, the member stopped answering the Support Agent") for t in db.q(
+                      "SELECT * FROM tickets WHERE status='bot' AND last_activity<?", now - WARN_AFTER)]
+        closes += [(t, "closed, the member didn't answer within 24 h") for t in db.q(
+                      "SELECT * FROM tickets WHERE status='closing' AND last_activity<?", now - WARN_AFTER)]
+        for t, why in closes:
+            try:
+                await self.close(t, by=None, reason=why)
+            except Exception:
+                log.exception("ticket %s auto-close", t["id"])
 
     @timers.before_loop
     async def _wait_timers(self):
@@ -1228,8 +1264,9 @@ class Tickets(commands.Cog):
                                                            ephemeral=True)
         if t["status"] == "closed":
             return await interaction.response.send_message("This ticket is closed.", ephemeral=True)
+        await interaction.response.defer(thinking=True)   # answer first: a timed-out reply would get retried = sent twice
         ok = await self.relay_staff(t, interaction.user, text, [])
-        await interaction.response.send_message(f"{'Sent' if ok else 'Could not send'} saved reply `{name}`:\n{text}")
+        await interaction.followup.send(f"{'Sent' if ok else 'Could not send'} saved reply `{name}`:\n{text}")
 
     @reply.autocomplete("name")
     async def _reply_names(self, interaction, current: str):
@@ -1270,6 +1307,7 @@ class Tickets(commands.Cog):
         return e
 
     @tasks.loop(hours=6)
+    @guarded
     async def monthly(self):
         now = dt.datetime.now(dt.timezone.utc)
         key = f"{now:%Y-%m}"

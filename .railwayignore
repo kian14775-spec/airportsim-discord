@@ -10,3 +10,13 @@ __pycache__/
 /assets/shots/
 /tools/
 /tests/
+/_local/
+/docs/
+/deploy/
+*.md
+*.db-wal
+*.db-shm
+*.tmp
+.pytest_cache/
+requirements-dev.txt
+/assets/server/

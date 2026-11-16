@@ -13,11 +13,12 @@ import shutil
 import discord
 
 from . import db
-from .core import embed, is_staff, log
+from .core import disk_ok, embed, is_staff, log
 from .paths import DATA
 
 FILES = DATA / "data" / "attachments"
 FILE_BUDGET = 25_000_000            # per ticket
+FILES_TOTAL = 200_000_000           # all tickets; + 80 MB log image copies (modlog) leaves room on the 500 MB volume
 PAGE_CHARS = 3600
 KIND_ICON = {"member": "👤", "staff": "🛠️", "note": "🔒", "bot": "🤖"}
 
@@ -72,14 +73,14 @@ async def archive(tid: int, thread: discord.Thread, bot_id: int) -> int:
         who, kind, text = _kind_and_text(m, bot_id)
         saved = []
         for a in m.attachments:
-            if a.size <= budget:
+            if a.size <= budget and disk_ok(a.size, f"ticket {tid} file"):
                 folder.mkdir(parents=True, exist_ok=True)
                 path = folder / f"{m.id}_{re.sub(r'[^A-Za-z0-9._-]', '_', a.filename)}"
                 try:
                     await a.save(path)
                     saved.append(path.name)
                     budget -= a.size
-                except discord.HTTPException:
+                except (discord.HTTPException, OSError):   # a lost file must not lose the whole chat
                     pass
         if text or saved:
             rows.append((tid, m.created_at.timestamp(), who, kind, text[:4000], json.dumps(saved)))
@@ -133,11 +134,11 @@ def search(text: str, limit: int = 15):
                 "ORDER BY t.id DESC LIMIT ?", like, like, like, limit)
 
 
-def prune(keep_bytes: int = 350_000_000) -> None:
+def prune(keep_bytes: int = FILES_TOTAL) -> None:
     """Keep the volume under its 500 MB: drop the oldest tickets' files first (text stays)."""
     if not FILES.exists():
         return
-    folders = sorted((p for p in FILES.iterdir() if p.is_dir()), key=lambda p: p.name)
+    folders = sorted((p for p in FILES.iterdir() if p.is_dir()), key=lambda p: int(p.name) if p.name.isdigit() else 0)
     size = sum(f.stat().st_size for p in folders for f in p.iterdir())
     while folders and size > keep_bytes:
         old = folders.pop(0)

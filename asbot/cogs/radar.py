@@ -36,7 +36,8 @@ LIST_TICKETS = 8
 
 
 def settings() -> dict:
-    return {"window_min": 60, "min_members": 3, "topics": ["bug", "purchase"], "cooldown_hours": 2,
+    # open_hours: an unanswered "possible incident" stops collecting tickets (and blocking new alerts) after this
+    return {"window_min": 60, "min_members": 3, "topics": ["bug", "purchase"], "cooldown_hours": 2, "open_hours": 48,
             **(cfg().get("radar") or {})}
 
 
@@ -146,7 +147,8 @@ async def note_ticket(guild: discord.Guild, tid: int, topic: str, user_id: int, 
     if topic in IGNORED_TOPICS:
         return
     s, now, words = settings(), db.now(), words_of(text)
-    live = db.q("SELECT * FROM incidents WHERE status IN ('new', 'real') ORDER BY id")
+    since = now - s["open_hours"] * 3600   # older unconfirmed ones are stale; confirmed ones stay until Fixed
+    live = db.q("SELECT * FROM incidents WHERE status='real' OR (status='new' AND opened>=?) ORDER BY id", since)
     for inc in live:
         if matches(inc, topic, words, text):
             ids = json.loads(inc["tickets"])
@@ -156,7 +158,8 @@ async def note_ticket(guild: discord.Guild, tid: int, topic: str, user_id: int, 
     rows = [{"id": r["id"], "user": r["user_id"], "topic": r["topic"], "words": words_of(ticket_text(r["id"]))}
             for r in db.q("SELECT id, user_id, topic FROM tickets WHERE created>=?", now - s["window_min"] * 60)
             if r["topic"] not in IGNORED_TOPICS]
-    recent = db.q("SELECT key FROM incidents WHERE status IN ('new', 'real') OR opened>=?", now - s["cooldown_hours"] * 3600)
+    recent = db.q("SELECT key FROM incidents WHERE status='real' OR (status='new' AND opened>=?) OR opened>=?",
+                  since, now - s["cooldown_hours"] * 3600)
     found = cluster(rows, s, {r["key"] for r in recent})
     if found:
         key, label, ids = found
@@ -176,8 +179,9 @@ class ConfirmModal(discord.ui.Modal, title="Confirm the incident"):
         from .news import status
         await interaction.response.defer(ephemeral=True)
         text = str(self.text).strip()
-        db.run("UPDATE incidents SET status='real', issue=?, by_id=? WHERE id=? AND status='new'",
-               text, interaction.user.id, self.iid)
+        if not db.changes("UPDATE incidents SET status='real', issue=?, by_id=? WHERE id=? AND status='new'",
+                          text, interaction.user.id, self.iid):   # someone confirmed it first: don't add it twice
+            return await interaction.followup.send("Someone already handled this.", ephemeral=True)
         news = interaction.client.get_cog("News")
         await news.edit_status(add=text)
         if status()["state"] == "ok":
@@ -202,12 +206,16 @@ class RadarButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:ra
         inc = incident(self.iid)
         if not is_staff(interaction.user):
             return await interaction.response.send_message("Staff only.", ephemeral=True)
-        if not inc or inc["status"] != ("real" if self.act == "fixed" else "new"):
+        was = "real" if self.act == "fixed" else "new"
+        if not inc or inc["status"] != was:
             return await interaction.response.send_message("Someone already handled this.", ephemeral=True)
         if self.act == "real":
             return await interaction.response.send_modal(ConfirmModal(self.iid, inc["label"]))
+        # status first, before any await: a double-click on Fixed must not DM everyone twice
+        if not db.changes("UPDATE incidents SET status=?, by_id=? WHERE id=? AND status=?",
+                          self.act, interaction.user.id, self.iid, was):
+            return await interaction.response.send_message("Someone already handled this.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
-        db.run("UPDATE incidents SET status=?, by_id=? WHERE id=?", self.act, interaction.user.id, self.iid)
         if self.act == "false":
             await refresh(interaction.guild, self.iid)
             return await interaction.followup.send("Dismissed.", ephemeral=True)

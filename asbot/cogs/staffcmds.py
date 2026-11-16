@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 
 from .. import db, faq, ticketlist, transcripts, ui
-from ..core import cfg, is_staff, log_staff
+from ..core import cfg, is_staff, log_staff, role
 
 # name -> (usage, what it does, ticket post only)
 COMMANDS = {
@@ -30,6 +30,12 @@ COMMANDS = {
     "answer": ("?answer trigger, words | the fix", "Save an instant answer in one line", False),
     "help": ("?help", "This list", False),
 }
+
+
+def staff_place(ch) -> bool:
+    """Only staff can read it: neither @everyone nor verified members (the `verified` role) can see the channel."""
+    g = ch.guild
+    return not any(r and ch.permissions_for(r).view_channel for r in (g.default_role, role(g, "verified")))
 
 
 def help_card() -> discord.Embed:
@@ -87,8 +93,8 @@ class StaffCommands(commands.Cog):
         name, rest = name.lower(), rest.strip()
         if name not in COMMANDS or not is_staff(msg.author):
             return
-        if msg.channel.permissions_for(msg.guild.default_role).view_channel:
-            return   # public channel: stay quiet, commands are for staff-only places
+        if not staff_place(msg.channel):
+            return   # members can read it: stay quiet, commands are for staff-only places
         from .tickets import ticket_for_thread
         t = ticket_for_thread(msg.channel.id) if isinstance(msg.channel, discord.Thread) else None
         if COMMANDS[name][2] and (not t or t["status"] == "closed"):

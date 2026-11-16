@@ -23,7 +23,7 @@ import discord
 from discord.ext import commands, tasks
 
 from .. import db, names, timeline
-from ..core import cfg, channel, is_staff, log, log_card, log_staff
+from ..core import cfg, channel, disk_ok, guarded, is_staff, log, log_card, log_staff
 from ..paths import DATA
 
 db.conn().executescript("""
@@ -34,14 +34,18 @@ CREATE INDEX IF NOT EXISTS msglog_created ON msglog(created);
 
 CACHE = DATA / "logcache"
 LOG_KEYS = ("log_security", "log_mod", "log_messages")
-MAX_FILE = 8 * 1024 * 1024        # bots can upload 10 MB per message on an unboosted server
+MB = 1024 * 1024
+MAX_FILE = 8 * MB                 # bots can upload 10 MB per message on an unboosted server
+CACHE_MB = 80                     # image copies, at most: with 200 MB of ticket files this fits the 500 MB volume
 GHOST_SECONDS = 120
 SMALL_EDIT = 0.85                 # this similar (0-1) = a typo fix, not worth a post
 LINK_OR_PING = re.compile(r"https?://\S+|<@[!&]?\d+>|@everyone|@here")
 
 
 def settings() -> dict:
-    return {"keep_messages_days": 7, "keep_images_hours": 12, "keep_images_mb": 150, **(cfg().get("logs") or {})}
+    s = {"keep_messages_days": 7, "keep_images_hours": 12, "keep_images_mb": CACHE_MB, **(cfg().get("logs") or {})}
+    s["keep_images_mb"] = min(s["keep_images_mb"], CACHE_MB)   # config can lower it, never past the disk budget
+    return s
 
 
 def skip_channel(guild: discord.Guild, ch) -> bool:
@@ -118,6 +122,7 @@ class ModLog(commands.Cog):
         self.del_counts: dict[int, int] = {}     # audit entry id -> deletes it counted
         self.invites: dict[str, tuple[int, int | None]] = {}   # code -> (uses, inviter id)
         self.joins: list[float] = []
+        self.cache_bytes = 0                     # size of the image copies, kept up to date on save and prune
         CACHE.mkdir(parents=True, exist_ok=True)
         self.prune.start()
 
@@ -125,17 +130,29 @@ class ModLog(commands.Cog):
         self.prune.cancel()
 
     @tasks.loop(minutes=10)
+    @guarded
     async def prune(self):
         s = settings()
         db.run("DELETE FROM msglog WHERE created<?", time.time() - s["keep_messages_days"] * 86400)
         timeline.prune()
-        files = sorted(CACHE.glob("*"), key=lambda p: p.stat().st_mtime)
-        cutoff, cap = time.time() - s["keep_images_hours"] * 3600, s["keep_images_mb"] * 1024 * 1024
-        total = sum(p.stat().st_size for p in files)
-        for p in files:
-            if p.stat().st_mtime < cutoff or total > cap:
-                total -= p.stat().st_size
+        self.prune_cache(s["keep_images_mb"] * MB, time.time() - s["keep_images_hours"] * 3600)
+
+    def prune_cache(self, cap: int, cutoff: float = 0) -> None:
+        """Drop image copies older than `cutoff`, then the oldest until they fit in `cap`."""
+        files = []
+        for p in CACHE.glob("*"):
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            files.append((st.st_mtime, st.st_size, p))
+        files.sort()
+        total = sum(f[1] for f in files)
+        for mtime, size, p in files:
+            if mtime < cutoff or total > cap:
+                total -= size
                 p.unlink(missing_ok=True)
+        self.cache_bytes = total
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -162,10 +179,16 @@ class ModLog(commands.Cog):
             asyncio.create_task(self.keep(m))
 
     async def keep(self, m: discord.Message):
+        cap = settings()["keep_images_mb"] * MB
         for i, a in enumerate(m.attachments[:10]):
             if (a.content_type or "").split("/")[0] in ("image", "video") and a.size <= MAX_FILE:
+                if self.cache_bytes + a.size > cap:   # full: make room now, not at the next 10-min prune
+                    self.prune_cache(cap * 3 // 4)
+                if not disk_ok(a.size, "log image copy"):
+                    return
                 try:
                     await a.save(CACHE / f"{m.id}_{i}_{safe_name(a.filename)}")
+                    self.cache_bytes += a.size
                 except (discord.HTTPException, OSError) as e:
                     log.warning("log cache %s: %s", m.id, e)
 

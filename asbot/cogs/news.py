@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands, tasks
 
 from .. import db
-from ..core import channel, embed, game_stats, log, log_staff, role
+from ..core import channel, embed, game_stats, guarded, log, log_staff, role
 from ..ui import BAD, BRAND, GOOD, WAIT
 
 STATES = {"ok": ("All systems normal", GOOD), "issues": ("Some issues right now", WAIT),
@@ -43,21 +43,34 @@ class ConfirmPost(discord.ui.View):
     def __init__(self, target, ping, e):
         super().__init__(timeout=600)
         self.target, self.ping, self.e = target, ping, e
+        self.done = False   # a second click (or a click while posting) does nothing
 
     @discord.ui.button(label="Post it", style=discord.ButtonStyle.success)
     async def post(self, interaction: discord.Interaction, _):
-        msg = await self.target.send(content=self.ping.mention if self.ping else None, embed=self.e,
-                                     allowed_mentions=discord.AllowedMentions(roles=[self.ping] if self.ping else []))
+        if self.done:
+            return await interaction.response.defer()
+        self.done = True
+        self.stop()
+        await interaction.response.edit_message(content="Posting...", embed=None, view=None)
+        try:
+            msg = await self.target.send(content=self.ping.mention if self.ping else None, embed=self.e,
+                                         allowed_mentions=discord.AllowedMentions(roles=[self.ping] if self.ping else []))
+        except discord.HTTPException as err:
+            return await interaction.edit_original_response(content=f"Couldn't post: {err.text or err}")
         if self.target.is_news():
             try:
                 await msg.publish()
             except discord.HTTPException:
                 pass
-        await interaction.response.edit_message(content=f"Posted: {msg.jump_url}", embed=None, view=None)
+        await interaction.edit_original_response(content=f"Posted: {msg.jump_url}")
         await log_staff(interaction.guild, f"{interaction.user.mention} posted in {self.target.mention}", kind="Bot")
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, _):
+        if self.done:
+            return await interaction.response.defer()
+        self.done = True
+        self.stop()
         await interaction.response.edit_message(content="Cancelled.", embed=None, view=None)
 
 
@@ -133,6 +146,7 @@ class News(commands.Cog):
         await self.render_status()
 
     @tasks.loop(minutes=3)
+    @guarded
     async def poll_game(self):
         try:
             g = await game_stats()

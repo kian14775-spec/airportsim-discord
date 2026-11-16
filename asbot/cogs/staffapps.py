@@ -10,13 +10,25 @@ import discord
 from discord.ext import commands
 
 from .. import db
-from ..core import cfg, channel, embed, is_staff, log_staff, role_named
+from ..core import cfg, channel, embed, is_staff, log_staff, role, role_named
 
 from ..ui import BAD as RED, GOOD as GREEN, WAIT as AMBER
+
+LEADERS = ("founder", "owner", "co_owner", "board")   # layout role keys that may accept/deny, next to admins
 
 
 def positions() -> dict[str, list[str]]:
     return cfg()["applications"]["positions"]
+
+
+def can_decide(member) -> bool:
+    """Accept/Deny gives a staff role, so it's for Admin+ only; the rest of staff vote with 👍 / 👎."""
+    if not isinstance(member, discord.Member):
+        return False
+    if member.guild_permissions.administrator:
+        return True
+    ids = {r.id for r in (role(member.guild, k) for k in LEADERS) if r}
+    return any(r.id in ids for r in member.roles)
 
 
 def _tags(forum: discord.ForumChannel, name: str) -> list[discord.ForumTag]:
@@ -82,6 +94,9 @@ class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:app:
     async def callback(self, interaction: discord.Interaction):
         if not is_staff(interaction.user):
             return await interaction.response.send_message("Staff only.", ephemeral=True)
+        if not can_decide(interaction.user):
+            return await interaction.response.send_message("Only Admins and leadership can accept or deny. "
+                                                           "Vote with 👍 / 👎 on the post instead.", ephemeral=True)
         app = db.one("SELECT * FROM applications WHERE id=?", self.aid)
         if not app or app["status"] != "pending":
             return await interaction.response.send_message("Already decided.", ephemeral=True)

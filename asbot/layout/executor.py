@@ -33,6 +33,14 @@ async def execute(plan: Plan, layout: Layout, backend: Backend, state: dict[str,
             out[backend.everyone_id if ref == EVERYONE else ids[role_ref(ref)]] = bits
         return out
 
+    def edit_fields(a) -> dict:
+        """The action's fields for the backend. Discord replaces the whole overwrite list on edit, so
+        the overwrites the layout doesn't own ("_keep": booster perks, member blocks...) go back as they are."""
+        fields = {k: v for k, v in a.data.items() if not k.startswith("_")}
+        if "overwrites" in fields:
+            fields["overwrites"] = {**a.data.get("_keep", {}), **resolve(fields["overwrites"])}
+        return fields
+
     for a in plan.actions:
         if a.op == "reorder" and not a.data.get("needed"):
             continue
@@ -46,19 +54,14 @@ async def execute(plan: Plan, layout: Layout, backend: Backend, state: dict[str,
             s = a.data["spec"]
             ids[cat_ref(s.key)] = await backend.create_category(s.name, resolve(s.overwrites))
         elif a.op == "edit_category":
-            fields = dict(a.data)
-            if "overwrites" in fields:
-                fields["overwrites"] = resolve(fields["overwrites"])
-            await backend.edit_channel(ids[cat_ref(a.key)], "category", fields)
+            await backend.edit_channel(ids[cat_ref(a.key)], "category", edit_fields(a))
         elif a.op == "create_channel":
             s = a.data["spec"]
             parent = a.data["parent"]
             ids[ch_ref(s.key)] = await backend.create_channel(s, ids[cat_ref(parent)] if parent else None,
                                                               resolve(s.overwrites))
         elif a.op == "edit_channel":
-            fields = {k: v for k, v in a.data.items() if k != "_type"}
-            if "overwrites" in fields:
-                fields["overwrites"] = resolve(fields["overwrites"])
+            fields = edit_fields(a)
             if "parent" in fields:
                 fields["parent"] = None if fields["parent"] == TOP else ids[cat_ref(fields["parent"])]
             await backend.edit_channel(ids[ch_ref(a.key)], a.data["_type"], fields)

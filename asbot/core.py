@@ -1,9 +1,11 @@
 """Shared helpers: settings, layout lookups, staff checks, embeds, Roblox web API."""
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
+import shutil
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,9 +14,35 @@ import discord
 import yaml
 
 from .layout import sync
+from .paths import DATA
 
 ROOT = Path(__file__).resolve().parents[1]
 log = logging.getLogger("asbot")
+MIN_FREE_MB = 50   # below this the bot stops saving files (ticket screenshots, log image copies)
+
+
+def guarded(fn):
+    """For tasks.loop bodies: an error is logged and the loop runs again next time.
+    discord.py ends a loop for good on anything but a network error (a 5xx, a 403, sqlite...)."""
+    @functools.wraps(fn)   # keeps the name: tasks.Loop stores its bound copy under it
+    async def run(*args, **kw):
+        try:
+            return await fn(*args, **kw)
+        except Exception:
+            log.exception("loop %s failed, it runs again next time", fn.__qualname__)
+    return run
+
+
+def disk_ok(size: int = 0, what: str = "file") -> bool:
+    """Room on the data volume for `size` more bytes while keeping MIN_FREE_MB free. Callers skip saving if not."""
+    try:
+        free = shutil.disk_usage(DATA).free
+    except OSError:
+        return True
+    if free - size < MIN_FREE_MB * 1024 * 1024:
+        log.warning("disk: %d MB free, not saving %s", free // 1048576, what)
+        return False
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -148,6 +176,18 @@ async def log_staff(guild: discord.Guild, text: str, kind: str = "Bot", event: s
 _session: aiohttp.ClientSession | None = None
 
 
+def quiet(fn):
+    """Roblox down, slow or answering with an HTML error page = None, never an exception."""
+    @functools.wraps(fn)
+    async def call(*args, **kw):
+        try:
+            return await fn(*args, **kw)
+        except (aiohttp.ClientError, TimeoutError, ValueError, KeyError) as e:
+            log.warning("roblox %s: %s", fn.__name__, e)
+            return None
+    return call
+
+
 def http() -> aiohttp.ClientSession:
     global _session
     if _session is None or _session.closed:
@@ -156,6 +196,7 @@ def http() -> aiohttp.ClientSession:
     return _session
 
 
+@quiet
 async def roblox_user_by_name(name: str) -> dict | None:
     async with http().post("https://users.roblox.com/v1/usernames/users",
                            json={"usernames": [name], "excludeBannedUsers": False}) as r:
@@ -163,11 +204,13 @@ async def roblox_user_by_name(name: str) -> dict | None:
     return data[0] if data else None
 
 
+@quiet
 async def roblox_user(user_id: int) -> dict | None:
     async with http().get(f"https://users.roblox.com/v1/users/{user_id}") as r:
         return await r.json() if r.status == 200 else None
 
 
+@quiet
 async def roblox_headshot(user_id: int) -> str | None:
     url = (f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}"
            "&size=150x150&format=Png&isCircular=false")
@@ -176,6 +219,7 @@ async def roblox_headshot(user_id: int) -> str | None:
     return data[0].get("imageUrl") if data else None
 
 
+@quiet
 async def roblox_group_rank(user_id: int, group_id: int) -> str | None:
     async with http().get(f"https://groups.roblox.com/v2/users/{user_id}/groups/roles") as r:
         data = (await r.json()).get("data", []) if r.status == 200 else []
@@ -185,11 +229,13 @@ async def roblox_group_rank(user_id: int, group_id: int) -> str | None:
     return None
 
 
+@quiet
 async def group_info(group_id: int) -> dict | None:
     async with http().get(f"https://groups.roblox.com/v1/groups/{group_id}") as r:
         return await r.json() if r.status == 200 else None
 
 
+@quiet
 async def game_votes() -> dict | None:
     uid = cfg()["game"]["universe_id"]
     async with http().get(f"https://games.roblox.com/v1/games/votes?universeIds={uid}") as r:
@@ -197,6 +243,7 @@ async def game_votes() -> dict | None:
     return data[0] if data else None
 
 
+@quiet
 async def game_stats() -> dict | None:
     uid = cfg()["game"]["universe_id"]
     async with http().get(f"https://games.roblox.com/v1/games?universeIds={uid}") as r:

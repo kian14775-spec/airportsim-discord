@@ -122,7 +122,7 @@ radar:                     # incident radar (asbot/cogs/radar.py)
 logs:
   keep_messages_days: 7    # text of recent messages, so deletes and edits always show what was said
   keep_images_hours: 12    # copies of posted images/videos, posted again if the message is deleted
-  keep_images_mb: 150      # cap for those copies on the volume
+  keep_images_mb: 80       # cap for those copies on the volume (ticket files get 200 MB; volume is 500)
   keep_voice_days: 7       # voice history in the /staff member lookup
   keep_history_days: 90    # everything else in the /staff member lookup
   muted:                   # logs that don't post (remove a line to bring one back)

@@ -26,6 +26,11 @@ def _ctype(ch) -> str:
     return "other"
 
 
+def _is_role(target) -> bool:
+    """Overwrite targets are Role / Member, or an Object typed Role / User when not cached."""
+    return isinstance(target, discord.Role) or (isinstance(target, discord.Object) and target.type is discord.Role)
+
+
 def snapshot(guild: discord.Guild) -> Snapshot:
     roles = {r.id: RoleSnap(id=r.id, name=r.name, color=r.color.value, hoist=r.hoist,
                             mentionable=r.mentionable, permissions=r.permissions.value,
@@ -33,10 +38,12 @@ def snapshot(guild: discord.Guild) -> Snapshot:
              for r in guild.roles}
     chans = {}
     for ch in guild.channels:
-        ow = {}
+        ow, members = {}, set()
         for target, o in ch.overwrites.items():
             allow, deny = o.pair()
             ow[target.id] = (allow.value, deny.value)
+            if not _is_role(target):
+                members.add(target.id)
         forum = isinstance(ch, discord.ForumChannel)
         chans[ch.id] = ChannelSnap(
             id=ch.id, name=ch.name, type=_ctype(ch), parent=ch.category_id, position=ch.position,
@@ -45,6 +52,7 @@ def snapshot(guild: discord.Guild) -> Snapshot:
             tags=[t.name + ("*" if t.moderated else "") for t in ch.available_tags] if forum else [],
             require_tag=ch.flags.require_tag if forum else False,
             layout=_LAYOUTS.get(ch.default_layout) if forum else None,
+            member_targets=members,
         )
     return Snapshot(everyone_id=guild.default_role.id, roles=roles, channels=chans,
                     community="COMMUNITY" in guild.features)
@@ -54,12 +62,21 @@ class DiscordBackend:
     def __init__(self, guild: discord.Guild, reason: str = "layout sync"):
         self.guild, self.reason = guild, reason
         self.everyone_id = guild.default_role.id
+        self.made: dict[int, object] = {}   # roles/sections made this run (discord.py may not cache them yet)
 
-    def _target(self, tid: int):
-        return self.guild.get_role(tid) or self.guild.get_member(tid) or discord.Object(tid)
+    def _get(self, cid: int | None):
+        return (self.guild.get_channel(cid) or self.made.get(cid)) if cid else None
 
-    def _overwrites(self, ow: dict[int, tuple[int, int]]):
-        return {self._target(t): discord.PermissionOverwrite.from_pair(discord.Permissions(a), discord.Permissions(d))
+    def _target(self, tid: int, existing: dict[int, object]):
+        """An overwrite that is already on the channel reuses its own target, so a member overwrite
+        stays a member overwrite and a role one a role one (the layout leaves those it doesn't own as is)."""
+        return (existing.get(tid) or self.guild.get_role(tid) or self.made.get(tid)
+                or self.guild.get_member(tid) or discord.Object(tid))
+
+    def _overwrites(self, ow: dict[int, tuple[int, int]], ch=None):
+        existing = {t.id: t for t in ch.overwrites} if ch is not None else {}
+        return {self._target(t, existing): discord.PermissionOverwrite.from_pair(discord.Permissions(a),
+                                                                                 discord.Permissions(d))
                 for t, (a, d) in ow.items()}
 
     async def create_role(self, name, color, hoist, mentionable, permissions) -> int:
@@ -72,7 +89,9 @@ class DiscordBackend:
             kw["mentionable"] = mentionable
         if permissions is not None:
             kw["permissions"] = discord.Permissions(permissions)
-        return (await self.guild.create_role(**kw)).id
+        role = await self.guild.create_role(**kw)
+        self.made[role.id] = role
+        return role.id
 
     async def edit_role(self, role_id, fields) -> None:
         kw = dict(fields)
@@ -83,11 +102,12 @@ class DiscordBackend:
         await self.guild.get_role(role_id).edit(reason=self.reason, **kw)
 
     async def create_category(self, name, overwrites) -> int:
-        return (await self.guild.create_category(name, overwrites=self._overwrites(overwrites),
-                                                 reason=self.reason)).id
+        cat = await self.guild.create_category(name, overwrites=self._overwrites(overwrites), reason=self.reason)
+        self.made[cat.id] = cat
+        return cat.id
 
     async def create_channel(self, spec, parent_id, overwrites) -> int:
-        cat = self.guild.get_channel(parent_id)
+        cat = self._get(parent_id)
         ow = self._overwrites(overwrites)
         if spec.type == "voice":
             ch = await self.guild.create_voice_channel(spec.name, category=cat, overwrites=ow, reason=self.reason)
@@ -105,18 +125,19 @@ class DiscordBackend:
             ch = await self.guild.create_text_channel(
                 spec.name, category=cat, overwrites=ow, topic=spec.topic or "",
                 slowmode_delay=spec.slowmode, news=spec.type == "announcement", reason=self.reason)
+        self.made[ch.id] = ch
         return ch.id
 
     async def edit_channel(self, channel_id, ctype, fields) -> None:
-        ch = self.guild.get_channel(channel_id)
+        ch = self._get(channel_id)
         kw = {}
         for k, v in fields.items():
             if k == "name":
                 kw["name"] = v
             elif k == "overwrites":
-                kw["overwrites"] = self._overwrites(v)
+                kw["overwrites"] = self._overwrites(v, ch)
             elif k == "parent":
-                kw["category"] = self.guild.get_channel(v) if v else None
+                kw["category"] = self._get(v)
             elif k == "topic":
                 kw["topic"] = v or ""
             elif k == "slowmode":
@@ -151,8 +172,8 @@ class DiscordBackend:
     async def reorder(self, order) -> None:
         # Discord only allows one parent change per bulk call, so move strays one by one first
         for i, _, parent in order:
-            ch = self.guild.get_channel(i)
+            ch = self._get(i)
             if ch is not None and not isinstance(ch, discord.CategoryChannel) and ch.category_id != parent:
-                await ch.edit(category=self.guild.get_channel(parent), reason=self.reason)
+                await ch.edit(category=self._get(parent), reason=self.reason)
         payload = [{"id": i, "position": p} for i, p, _ in order]
         await self.guild._state.http.bulk_channel_update(self.guild.id, payload, reason=self.reason)

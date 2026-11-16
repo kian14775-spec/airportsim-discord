@@ -43,6 +43,7 @@ def step_text(n: int) -> str:
 async def give_strike(interaction: discord.Interaction, member: discord.Member, reason: str, context: str = ""):
     if member.bot or is_staff(member):
         return await interaction.response.send_message("You can't strike bots or staff.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)   # first: a slow timeout + DM must not look like a failure (= a 2nd strike)
     db.run("INSERT INTO strikes(user_id, reason, by_id, created) VALUES(?, ?, ?, ?)",
            member.id, reason, interaction.user.id, db.now())
     n = len(active(member.id))
@@ -62,8 +63,7 @@ async def give_strike(interaction: discord.Interaction, member: discord.Member, 
         await member.send(embed=dm)
     except discord.HTTPException:
         note += " (DMs closed)"
-    await interaction.response.send_message(
-        f"Strike {n} for {member.mention}: {step_text(n)}.{note}", ephemeral=True)
+    await interaction.followup.send(f"Strike {n} for {member.mention}: {step_text(n)}.{note}", ephemeral=True)
     timeline.add(member.id, "staff", f"Strike {n} by {interaction.user.mention}: {reason}")
     extra = " · ⚠️ 4+ strikes: consider a ban" if n > len(STEPS) else ""
     await log_staff(member.guild, f"⚠️ Strike {n} for {member.mention} by {interaction.user.mention}: {reason}"

@@ -44,13 +44,25 @@ MIGRATIONS = [
 _conn: sqlite3.Connection | None = None
 
 
+class _Conn(sqlite3.Connection):
+    """Autocommit, except `with db.conn():` which is one real transaction (one write to disk,
+    all or nothing). Plain autocommit never opens one, so each row would commit on its own.
+    Keep the block free of awaits: other coroutines' writes would land in it."""
+
+    def __enter__(self):
+        if not self.in_transaction:
+            self.execute("BEGIN")
+        return super().__enter__()
+
+
 def conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(DB_FILE, isolation_level=None)   # autocommit
+        _conn = sqlite3.connect(DB_FILE, isolation_level=None, factory=_Conn)   # autocommit
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA synchronous=NORMAL")   # safe with WAL; no fsync on every single write
         _conn.executescript(SCHEMA)
         for sql in MIGRATIONS:
             try:
@@ -70,6 +82,11 @@ def one(sql: str, *args) -> sqlite3.Row | None:
 
 def run(sql: str, *args) -> int:
     return conn().execute(sql, args).lastrowid
+
+
+def changes(sql: str, *args) -> int:
+    """Like run(), but returns how many rows changed: 0 = someone else got there first."""
+    return conn().execute(sql, args).rowcount
 
 
 def now() -> float:

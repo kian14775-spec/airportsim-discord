@@ -148,8 +148,9 @@ class StaffMenu(discord.ui.Select):
             return await interaction.response.send_message("Livery of the Month:", view=ContestView(), ephemeral=True)
         if act == "member":
             return await interaction.response.send_message("Who?", view=_private([MemberPick()]), ephemeral=True)
-        if act == "today":
-            return await interaction.response.send_message(view=await bot.get_cog("Stats").so_far(), ephemeral=True)
+        if act == "today":   # 3 Roblox calls: answer first, they can take longer than Discord waits
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            return await interaction.followup.send(view=await bot.get_cog("Stats").so_far(), ephemeral=True)
         if act == "warn":
             return await interaction.response.send_message("Who?", view=_private([WarnPick()]), ephemeral=True)
         if act == "answers":

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from discord import Permissions
+
 from .model import EVERYONE, CategorySpec, ChannelSpec, Layout, Overwrites, RoleSpec, norm
 
 ARCHIVE_KEY = "_archive"
@@ -41,6 +43,7 @@ class ChannelSnap:
     tags: list[str] = field(default_factory=list)
     require_tag: bool = False
     layout: str | None = None
+    member_targets: set[int] = field(default_factory=set)   # overwrite ids that are members, not roles
 
 
 @dataclass
@@ -58,6 +61,7 @@ class Action:
     key: str
     text: str      # one line for the preview
     data: dict = field(default_factory=dict)
+    details: list[str] = field(default_factory=list)   # extra preview lines (exact permission changes)
 
 
 @dataclass
@@ -66,6 +70,9 @@ class Plan:
     matches: dict[str, int]          # state key ("role:staff", "cat:start", "ch:chat") -> id
     extras: list[ChannelSnap]        # live channels the layout doesn't mention
     errors: list[str]
+    kept: list[str] = field(default_factory=list)       # manual edits kept (sync.keep_manual_edits)
+    record: dict = field(default_factory=dict)          # the yaml's names/topics, saved after an apply
+    snap: Snapshot | None = None                        # the server as planned against (for the backup)
 
     @property
     def changes(self) -> list[Action]:
@@ -113,9 +120,46 @@ class _Matcher:
         return None
 
 
-def _ow_text(want: Overwrites, have: dict[str, tuple[int, int]]) -> str:
-    changed = sorted(set(want) ^ set(have) | {k for k in want if k in have and want[k] != have[k]})
-    return "perms (" + ", ".join(changed) + ")"
+# discord.py lists a few flags under their old names; show the ones the yaml and Discord use
+_YAML_NAME = {"read_messages": "view_channel", "external_emojis": "use_external_emojis",
+              "external_stickers": "use_external_stickers"}
+
+
+def flag_names(bits: int) -> list[str]:
+    return [_YAML_NAME.get(name, name) for name, on in Permissions(bits) if on]
+
+
+def _bits_text(allow: int, deny: int) -> str:
+    parts = [f"{label} {' '.join(flag_names(bits))}" for label, bits in (("allow", allow), ("deny", deny)) if bits]
+    return "; ".join(parts) or "no permissions"
+
+
+def _delta(label: str, old: int, new: int) -> str:
+    moves = ["+" + f for f in flag_names(new & ~old)] + ["-" + f for f in flag_names(old & ~new)]
+    return f"{label} {' '.join(moves)}" if moves else ""
+
+
+def _ow_changes(want: Overwrites, have: dict[str, tuple[int, int]], names: dict[str, str]) -> list[str]:
+    """One line per target whose overwrite changes: who, and exactly which bits move.
+    '+x' = x is added to that list, '-x' = x is taken off it."""
+    order = list(names)
+    lines = []
+    for ref in sorted(set(want) | set(have), key=lambda r: order.index(r) if r in order else len(order)):
+        old, new, who = have.get(ref), want.get(ref), names.get(ref, ref)
+        if old == new:
+            continue
+        if old is None:
+            lines.append(f"{who}: add ({_bits_text(*new)})")
+        elif new is None:
+            lines.append(f"{who}: remove ({_bits_text(*old)})")
+        else:
+            lines.append(f"{who}: " + "; ".join(p for p in (_delta("allow", old[0], new[0]),
+                                                            _delta("deny", old[1], new[1])) if p))
+    return lines
+
+
+def _ow_text(want: Overwrites, have: dict[str, tuple[int, int]], names: dict[str, str]) -> str:
+    return "perms (" + ", ".join(names[r] for r in names if want.get(r) != have.get(r)) + ")"
 
 
 def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
@@ -130,12 +174,28 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
 
     # ---- roles ----
     role_key_by_id: dict[int, str] = {snap.everyone_id: EVERYONE}
-    editable_roles = {i: r for i, r in snap.roles.items() if not r.managed and i != snap.everyone_id}
+    all_roles = {i: r for i, r in snap.roles.items() if i != snap.everyone_id}
+    editable_roles = {i: r for i, r in all_roles.items() if not r.managed}
     to_create: list[RoleSpec] = []
     for spec in layout.roles:
+        if spec.external:   # Discord's / another bot's role (Server Booster...): referenced, never made or changed
+            have = m.take(role_ref(spec.key), all_roles, [spec.name, *spec.was])
+            if have is None:
+                errors.append(f"Role @{spec.name} is marked external but is not on the server. The layout never "
+                              "makes external roles: fix its name in layout/server.yaml or make the role first.")
+            else:
+                matches[role_ref(spec.key)] = have.id
+                role_key_by_id[have.id] = spec.key
+            continue
         have = m.take(role_ref(spec.key), editable_roles, [spec.name, *spec.was])
         if have is None:
-            to_create.append(spec)
+            wanted = {norm(n) for n in [spec.name, *spec.was]}
+            clash = next((r for r in all_roles.values() if r.managed and norm(r.name) in wanted), None)
+            if clash:   # would otherwise make a duplicate of a role Discord or a bot owns
+                errors.append(f"Role @{clash.name} belongs to Discord or a bot, so the layout can't make or edit "
+                              f"it. Mark it `external: true` in layout/server.yaml.")
+            else:
+                to_create.append(spec)
             continue
         matches[role_ref(spec.key)] = have.id
         role_key_by_id[have.id] = spec.key
@@ -153,8 +213,34 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
     for spec in reversed(to_create):
         actions.append(Action("create_role", spec.key, f"+ role @{spec.name}", {"spec": spec}))
 
-    def have_overwrites(ch: ChannelSnap) -> dict[str, tuple[int, int]]:
-        return {role_key_by_id.get(t, f"id:{t}"): v for t, v in ch.overwrites.items()}
+    # The layout owns only the overwrites it names: @everyone, its own (non-external) roles, and any
+    # target this channel lists (e.g. an external role in perms_extra). Every other overwrite (Server
+    # Booster, Admin, other bots, single members) is passed along untouched in "_keep" and written back
+    # as it is, because Discord replaces a channel's whole overwrite list on edit.
+    owned = {EVERYONE} | {s.key for s in layout.roles if not s.external}
+    names = {EVERYONE: "@everyone", **{s.key: "@" + s.name for s in layout.roles}}
+
+    def split_overwrites(ch: ChannelSnap, want: Overwrites):
+        have, keep = {}, {}
+        for t, bits in ch.overwrites.items():
+            key = role_key_by_id.get(t)
+            if key is not None and (key in owned or key in want):
+                have[key] = bits
+            else:
+                keep[t] = bits
+        return have, keep
+
+    def ow_details(diff: dict, want: Overwrites, have_ow, keep, ch: ChannelSnap) -> list[str]:
+        """Preview lines for a perms change; also hands the untouched overwrites to the executor."""
+        if "overwrites" not in diff:
+            return []
+        diff["_keep"] = keep
+        lines = _ow_changes(want, have_ow, names)
+        if keep:
+            lines.append("left as they are: " + ", ".join(
+                f"@{snap.roles[t].name}" if t in snap.roles and t not in ch.member_targets else f"member {t}"
+                for t in sorted(keep)))
+        return lines
 
     needs_community = []
 
@@ -171,16 +257,18 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
             actions.append(Action("create_category", cspec.key, f"+ category {cspec.name}", {"spec": cspec}))
         else:
             matches[cat_ref(cspec.key)] = have.id
-            diff = {}
+            diff, notes = {}, []
+            have_ow, keep = split_overwrites(have, cspec.overwrites)
             if have.name != cspec.name:
                 diff["name"] = cspec.name
-            if have_overwrites(have) != cspec.overwrites:
+                notes.append(f"rename '{have.name}'")
+            if have_ow != cspec.overwrites:
                 diff["overwrites"] = cspec.overwrites
+                notes.append(_ow_text(cspec.overwrites, have_ow, names))
             if diff:
-                parts = [f"rename '{have.name}'" if "name" in diff else None,
-                         _ow_text(cspec.overwrites, have_overwrites(have)) if "overwrites" in diff else None]
-                actions.append(Action("edit_category", cspec.key,
-                                      f"~ category {cspec.name}: " + ", ".join(p for p in parts if p), diff))
+                details = ow_details(diff, cspec.overwrites, have_ow, keep, have)
+                actions.append(Action("edit_category", cspec.key, f"~ category {cspec.name}: " + ", ".join(notes),
+                                      diff, details))
 
     for cspec in layout.categories:
         parent_id = None if cspec.top else matches.get(cat_ref(cspec.key))
@@ -200,10 +288,12 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
                                       {"spec": spec, "parent": None if cspec.top else cspec.key}))
                 continue
             matches[ch_ref(spec.key)] = have.id
-            diff, notes = _channel_diff(spec, have, parent_id, cspec, have_overwrites(have))
+            have_ow, keep = split_overwrites(have, spec.overwrites)
+            diff, notes = _channel_diff(spec, have, parent_id, cspec, have_ow, names)
             if diff:
+                details = ow_details(diff, spec.overwrites, have_ow, keep, have)
                 actions.append(Action("edit_channel", spec.key, f"~ #{spec.name}: " + ", ".join(notes),
-                                      {**diff, "_type": spec.type}))
+                                      {**diff, "_type": spec.type}, details))
 
     if needs_community and not snap.community:
         errors.append("Turn on Community (Server Settings > Enable Community) first: "
@@ -247,7 +337,7 @@ def plan(layout: Layout, snap: Snapshot, state: dict[str, int] | None = None,
 
 
 def _channel_diff(spec: ChannelSpec, have: ChannelSnap, parent_id, cspec: CategorySpec,
-                  have_ow: dict[str, tuple[int, int]]):
+                  have_ow: dict[str, tuple[int, int]], names: dict[str, str]):
     diff, notes = {}, []
     if have.name != spec.name:
         diff["name"] = spec.name
@@ -281,7 +371,7 @@ def _channel_diff(spec: ChannelSpec, have: ChannelSnap, parent_id, cspec: Catego
             notes.append(f"{spec.layout} view")
     if have_ow != spec.overwrites:
         diff["overwrites"] = spec.overwrites
-        notes.append(_ow_text(spec.overwrites, have_ow))
+        notes.append(_ow_text(spec.overwrites, have_ow, names))
     return diff, notes
 
 

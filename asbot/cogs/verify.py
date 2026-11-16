@@ -114,8 +114,8 @@ class UsernameModal(discord.ui.Modal, title="Verify with Roblox"):
         await interaction.response.defer(ephemeral=True, thinking=True)
         user = await roblox_user_by_name(self.username.value.strip())
         if not user:
-            return await interaction.followup.send("I couldn't find that Roblox username. Check the spelling.",
-                                                   ephemeral=True)
+            return await interaction.followup.send("I couldn't find that Roblox username. Check the spelling, or "
+                                                   "try again in a minute if Roblox is slow.", ephemeral=True)
         code = f"ASIM-{random.choice(WORDS)}-{random.randint(1000, 9999)}"
         db.run("INSERT INTO pending_verify VALUES(?, ?, ?, ?, ?) ON CONFLICT(discord_id) DO UPDATE SET "
                "roblox_id=excluded.roblox_id, roblox_name=excluded.roblox_name, code=excluded.code, "

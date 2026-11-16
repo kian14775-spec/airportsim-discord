@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 
+import aiohttp
+
 from .core import cfg, http, log
 
 BASE = "https://apis.roblox.com"
@@ -27,15 +29,20 @@ def _universe() -> int:
 
 
 async def _call(method: str, url: str, **kw) -> tuple[int, dict]:
+    """(status, json). Status 0 when Roblox can't be reached, so callers see "no ban" / "failed"."""
     headers = {"x-api-key": _key(), "content-type": "application/json"}
-    async with http().request(method, url, headers=headers, **kw) as r:
-        try:
-            data = await r.json(content_type=None)
-        except (json.JSONDecodeError, ValueError):
-            data = {}
-        if r.status >= 400:
-            log.warning("open cloud %s %s -> %s %s", method, url.split("?")[0], r.status, str(data)[:200])
-        return r.status, data or {}
+    try:
+        async with http().request(method, url, headers=headers, **kw) as r:
+            try:
+                data = await r.json(content_type=None)
+            except (json.JSONDecodeError, ValueError):
+                data = {}
+            if r.status >= 400:
+                log.warning("open cloud %s %s -> %s %s", method, url.split("?")[0], r.status, str(data)[:200])
+            return r.status, data if isinstance(data, dict) else {}
+    except (aiohttp.ClientError, TimeoutError) as e:
+        log.warning("open cloud %s %s: %s", method, url.split("?")[0], e)
+        return 0, {}
 
 
 async def get_ban(user_id: int) -> dict | None:

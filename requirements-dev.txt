@@ -1,0 +1,6 @@
+# PC only: tests + tools/make_banners.py. Install: .venv\Scripts\python -m pip install -r requirements-dev.txt
+# Never installed on Railway (it reads requirements.txt only).
+pytest>=8
+numpy
+scipy
+Pillow

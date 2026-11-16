@@ -1,8 +1,10 @@
 # Airport Simulator Discord - the whole server as one file.
-# Change this file, then run:  python layout.py preview   (shows what would change)
-#                              python layout.py apply     (makes the changes)
+# Change this file, deploy (railway up), then in Discord: /layout preview, then /layout apply.
+# (PC: `python layout.py preview` is read-only; a PC apply needs --from-pc + the state sync in HANDOFF.)
 # The bot never deletes anything. Channels that are not in this file are listed,
 # and `apply --archive-extras` moves them into a hidden ARCHIVE category.
+# Perms the yaml doesn't name (Server Booster, Admin, other bots, single members) are left as they are.
+# Each apply first saves a backup of what it touches (DATA/backups/layout_<time>.json, newest 10).
 #
 # `key` = stable id for the bot. Keep it when renaming (change `name` only).
 # Channel types: text, announcement, forum, voice.

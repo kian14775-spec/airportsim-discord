@@ -2,7 +2,10 @@
 
 Checks: who can see what (unverified vs verified vs staff), the bot's role height,
 inbox ticket post + tag changes + close, party voice create/remove, panels present.
-Leaves one closed "[self-test]" post in #inbox as proof.
+The test ticket post and party channel are deleted again at the end.
+
+Layout ids come from the same place the bot reads them (asbot/paths.py STATE, via sync.load_state):
+the volume on Railway; on the PC seed/state, the copy that ships to the bot.
 """
 import asyncio
 import os
@@ -18,6 +21,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 from asbot import db  # noqa: E402
 from asbot.layout import sync  # noqa: E402
+from asbot.paths import STATE  # noqa: E402
 
 results: list[tuple[bool, str]] = []
 
@@ -53,6 +57,10 @@ def perms_for(ch: discord.abc.GuildChannel, roles: list[discord.Role]) -> discor
 async def run(client: discord.Client):
     g = client.get_guild(int(os.environ["GUILD_ID"]))
     state = sync.load_state(g.id)
+    print(f"layout ids: {STATE / f'ids_{g.id}.json'} ({len(state)} keys)")
+    if not state:
+        check(False, f"no layout ids in {STATE} (see asbot/paths.py)")
+        return
     ch = lambda k: g.get_channel(state.get(f"ch:{k}"))
     traveler = g.get_role(state["role:verified"])
     unverified = discord.utils.get(g.roles, name="Unverified")

@@ -29,6 +29,7 @@ class RoleSpec:
     mentionable: bool | None = None
     permissions: int | None = None    # None = leave as is
     was: list[str] = field(default_factory=list)
+    external: bool = False            # Discord's / another bot's role: found by name, never made or changed
 
 
 @dataclass
@@ -91,6 +92,10 @@ def _parse_roles(raw_roles: list[dict]) -> list[RoleSpec]:
         if key in seen:
             raise LayoutError(f"duplicate role key '{key}'")
         seen.add(key)
+        external = bool(r.get("external"))
+        if external and any(k in r for k in ("color", "hoist", "mentionable", "permissions")):
+            raise LayoutError(f"role {key}: external roles are only referenced, "
+                              "so color/hoist/mentionable/permissions can't be set")
         color = r.get("color")
         roles.append(RoleSpec(
             key=key,
@@ -100,6 +105,7 @@ def _parse_roles(raw_roles: list[dict]) -> list[RoleSpec]:
             mentionable=r.get("mentionable"),
             permissions=perm_bits(r["permissions"], f"role {key}") if "permissions" in r else None,
             was=_was(r),
+            external=external,
         ))
     return roles
 
@@ -115,29 +121,45 @@ def _parse_groups(raw: dict, roles: list[RoleSpec]) -> dict[str, list[str]]:
     return {g: list(m) for g, m in (raw or {}).items()}
 
 
-def _parse_presets(raw: dict, roles: list[RoleSpec], groups: dict[str, list[str]]) -> dict[str, Overwrites]:
+def _rules(targets: dict, roles: list[RoleSpec], groups: dict[str, list[str]], where: str) -> Overwrites:
+    """{target: {allow: [...], deny: [...]}} -> {ref: (allow_bits, deny_bits)}. A target is
+    @everyone, a group, a role key or a role name."""
     by_name = {norm(r.name): r.key for r in roles}
     keys = {r.key for r in roles}
-    presets: dict[str, Overwrites] = {}
-    for pname, targets in (raw or {}).items():
-        ow: Overwrites = {}
-        for target, rule in (targets or {}).items():
-            if target == EVERYONE:
-                refs = [EVERYONE]
-            elif target in groups:
-                refs = groups[target]
-            elif target in keys:
-                refs = [target]
-            elif norm(target) in by_name:
-                refs = [by_name[norm(target)]]
-            else:
-                raise LayoutError(f"preset {pname}: role '{target}' is not in roles or groups")
-            where = f"preset {pname} / {target}"
-            bits = (perm_bits(rule.get("allow"), where), perm_bits(rule.get("deny"), where))
-            for ref in refs:
-                ow[ref] = bits
-        presets[pname] = ow
-    return presets
+    ow: Overwrites = {}
+    for target, rule in (targets or {}).items():
+        if target == EVERYONE:
+            refs = [EVERYONE]
+        elif target in groups:
+            refs = groups[target]
+        elif target in keys:
+            refs = [target]
+        elif norm(target) in by_name:
+            refs = [by_name[norm(target)]]
+        else:
+            raise LayoutError(f"{where}: role '{target}' is not in roles or groups")
+        here = f"{where} / {target}"
+        rule = rule or {}
+        allow, deny = perm_bits(rule.get("allow"), here), perm_bits(rule.get("deny"), here)
+        if allow & deny:
+            raise LayoutError(f"{here}: a permission can't be in both allow and deny")
+        for ref in refs:
+            ow[ref] = (allow, deny)
+    return ow
+
+
+def _parse_presets(raw: dict, roles: list[RoleSpec], groups: dict[str, list[str]]) -> dict[str, Overwrites]:
+    return {pname: _rules(targets, roles, groups, f"preset {pname}") for pname, targets in (raw or {}).items()}
+
+
+def merge_extra(base: Overwrites, extra: Overwrites) -> Overwrites:
+    """`perms_extra` on top of a preset: per target, the extra allow/deny bits win; the preset's
+    other bits stay. A target the preset doesn't name gets exactly the extra bits."""
+    out = dict(base)
+    for ref, (allow, deny) in extra.items():
+        a0, d0 = out.get(ref, (0, 0))
+        out[ref] = ((a0 & ~deny) | allow, (d0 & ~allow) | deny)
+    return out
 
 
 def _preset(presets: dict[str, Overwrites], name: str | None, where: str) -> Overwrites:
@@ -177,6 +199,8 @@ def parse(data: dict) -> Layout:
             if ctype != "forum" and any(k in ch for k in ("tags", "require_tag", "layout")):
                 raise LayoutError(f"channel {key}: tags/require_tag/layout are forum-only")
             ow = _preset(presets, ch["perms"], f"channel {key}") if "perms" in ch else dict(cat_ow)
+            if ch.get("perms_extra"):
+                ow = merge_extra(ow, _rules(ch["perms_extra"], roles, groups, f"channel {key} perms_extra"))
             chans.append(ChannelSpec(
                 key=key,
                 name=ch["name"],

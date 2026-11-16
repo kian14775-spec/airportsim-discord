@@ -11,7 +11,7 @@ import discord
 from discord.ext import commands, tasks
 
 from .. import cards, db, names, ui
-from ..core import cfg, channel, game_stats, game_votes, group_info, log
+from ..core import cfg, channel, game_stats, game_votes, group_info, guarded, log
 from ..panels import drop_panel
 
 
@@ -177,6 +177,7 @@ class Stats(commands.Cog):
         return report_card(d, db.kv_get(f"snap:{d:%Y-%m-%d}", {}), await snapshot(self.guild), partial=True)
 
     @tasks.loop(minutes=5)
+    @guarded
     async def tick(self):
         g = self.guild
         out = channel(g, "stats") if g else None
