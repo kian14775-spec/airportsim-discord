@@ -557,11 +557,7 @@ class Duty(commands.Cog):
             db.kv_set("duty:closed", wk)
         chat = channel(g, "staff_chat")
         msg = await cards.post_card("staff_guide", chat, GuideCard()) if chat else None
-        if msg and not msg.pinned:
-            try:
-                await msg.pin()
-            except discord.HTTPException:
-                pass
+        await cards.pin_quietly(msg)
         await self.render()
 
     @tasks.loop(minutes=2)

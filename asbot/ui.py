@@ -1,21 +1,21 @@
 """The bot's one visual style. Every message the bot sends is built here.
 
-Rules: cards are dark and calm (the stripe blends into Discord's dark theme); colour is
-only used to say something (green = done/good, amber = waiting, red = problem,
-blue = info/brand). One small icon per title at most. Footer = the game name.
+Rules: cards (cards.container) have NO coloured side stripe since 2026-11-16 (Kian: banners, headings
+and dividers only). The colours below are for the old-style embeds (logs) and stay meaningful there:
+green = done, amber = waiting, red = problem. One small icon per title at most. Footer = the game name.
 """
 from __future__ import annotations
 
 import discord
 
-# Calm palette, picked to sit well on Discord's dark theme
-NEUTRAL = 0x2B2D31   # default: blends into the chat
-BRAND = 0x5B8DEF     # soft blue: welcome, info, panels
+NEUTRAL = 0x2B2D31   # log embeds: blends into the chat
+SKY = 0x4282BD       # the banners' blue
+BRAND = SKY          # info
+SLATE = SKY          # (old name)
 GOOD = 0x3BA55C      # done, accepted, online
 WAIT = 0xE0A33A      # waiting, pending, warnings
 BAD = 0xE5484D       # problems, denied, down
 QUIET = 0x80848E     # closed, archived
-SLATE = 0x4E5361     # calm grey edge for cards that match the dark banners
 
 TONES = {"neutral": NEUTRAL, "brand": BRAND, "good": GOOD, "wait": WAIT, "bad": BAD, "quiet": QUIET}
 

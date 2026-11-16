@@ -178,7 +178,7 @@ class Community(commands.Cog):
             cards.section("Available", names),
             cards.divider(),
             cards.small("Best livery each month can win Livery of the Month and get added to the game."),
-            accent=ui.WAIT, banner_name="liveries"))
+            accent=ui.BRAND, banner_name="liveries"))
         tags = [t for t in forum.available_tags if t.name == "Template"]
         await cards.forum_card("templates_thread", forum, "Livery templates", view, banners=("liveries",), tags=tags)
 

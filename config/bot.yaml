@@ -17,7 +17,7 @@ welcome:
     - No spam, self-promo or advertising outside the channels made for it.
     - Keep it safe for everyone. No NSFW, gore or shock content.
     - No exploiting, cheating or sharing exploits.
-    - Use the right channel. Support questions go to #support.
+    - "Use the right channel. Help with the game goes in **#support** (it opens once you verify)."
     - Don't ping staff for no reason. Open a ticket instead.
     - Follow Discord's Terms of Service and Roblox's Community Standards.
     - Staff have the final say.
@@ -83,7 +83,7 @@ applications:
     Moderator:
       - How old are you?
       - Why do you want to be a moderator?
-      - A member is spamming slurs in #chat. What do you do, step by step?
+      - "A member is spamming slurs in #chat. What do you do, step by step?"
       - How active are you per week, and what's your timezone?
   accept_roles:   # position -> existing role name given on accept
     Support Team: Support Team
@@ -253,6 +253,8 @@ creators:                   # creator pipeline (cogs/creators.py)
   poll_minutes: 30
   keywords: [airport simulator, airport sim]
   post_channel: socials
+  share_per_day: 3          # Share a post: max per creator per 24 h
+  live_cooldown_hours: 4    # Going live: once per this many hours
 
 bugs:                       # bug -> fix loop (cogs/bugs.py)
   forum: feedback           # layout key of ideas-and-bugs
@@ -323,7 +325,7 @@ guide:                      # the staff guide (cogs/duty.py): pinned in #staff-c
   pr:
     title: PR, creators and events
     body: |
-      **Videos:** press **Link my YouTube** in #creators-room. New Airport Simulator videos are shared in #socials with your name, by themselves.
+      **Your content:** press **Link my channels** in #creators-room (YouTube, TikTok, Twitch, Kick, Instagram, X). New YouTube videos about the game are shared in #socials by themselves. Anything else: **Share a post** or **Going live**, paste the link, done.
       **Events:** press **Plan an event**. The bot makes the Discord event, posts it, reminds people an hour before, and asks for screenshots afterwards.
       Points: a video = 6, an event with at least 3 people interested = 6.
   leads:

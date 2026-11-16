@@ -146,34 +146,45 @@ async def start_verify(interaction: discord.Interaction):
 
 class VerifyButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Verify", style=discord.ButtonStyle.success, custom_id="asbot:verify:start")
+        super().__init__(label="Verify", style=discord.ButtonStyle.primary, custom_id="asbot:verify:start")
 
     async def callback(self, interaction: discord.Interaction):
         await start_verify(interaction)
 
 
+class HelpButton(discord.ui.Button):
+    """Opens /help privately. A link to #support can't work here: unverified members can't see it yet."""
+
+    def __init__(self):
+        super().__init__(label="Get help", style=discord.ButtonStyle.secondary, custom_id="asbot:welcome:help")
+
+    async def callback(self, interaction: discord.Interaction):
+        from .hub import help_card
+        await interaction.response.send_message(view=help_card(), files=cards.files_for("help"), ephemeral=True)
+
+
 class WelcomeCard(cards.CardView):
-    """rules-and-verify: Welcome, Rules and Get started cards in one message."""
+    """rules-and-verify, one message: the welcome card, then one card that reads top to bottom:
+    rules -> get started (verify + help) -> pings and platform menus."""
 
     def __init__(self, guild: discord.Guild | None = None):
         w = cfg()["welcome"]
         links = [discord.ui.Button(label=label, url=url) for label, url in (w.get("links") or {}).items()]
         rules = "\n".join(f"**{i}.** {r}" for i, r in enumerate(w["rules"], 1))
-        sup = channel(guild, "support") if guild else None
-        start_row = [VerifyButton()] + ([discord.ui.Button(label="Get help", url=sup.jump_url)] if sup else [])
         menus = [cards.row(RoleGroupSelect(g)) for g, (key, _, _) in ROLE_GROUPS.items() if cfg().get(key)]
         super().__init__(
-            cards.container(cards.title(w["title"], w["intro"]), cards.divider(),
-                            cards.row(*links) if links else None, accent=ui.BRAND, banner_name="welcome"),
-            cards.container(cards.title("Rules"), cards.text(rules), cards.divider(),
+            cards.container(cards.title(w["title"], w["intro"]),
+                            cards.row(*links) if links else None, banner_name="welcome"),
+            cards.container(cards.title("Rules"), cards.text(rules),
                             cards.small("Breaking the rules can mean a strike, a timeout or a ban."),
-                            accent=ui.BAD, banner_name="rules"),
-            cards.container(cards.title("Get started", "Two quick steps and the whole server opens up."),
-                            cards.divider(),
+                            cards.divider(big=True),
+                            cards.title("Get started", "Two quick steps and the whole server opens up."),
                             cards.text("**1.** Press **Verify** and link your Roblox account\n"
-                                       "**2.** Choose what pings you and what you play on"),
-                            cards.row(*start_row), cards.divider(), *menus,
-                            cards.small("You can change your roles here any time."), accent=ui.GOOD))
+                                       "**2.** Pick what pings you and what you play on"),
+                            cards.row(VerifyButton(), HelpButton()),
+                            cards.divider(),
+                            *menus,
+                            cards.small("You can change these any time."), banner_name="rules"))
 
 
 class LinkAnywayView(discord.ui.View):

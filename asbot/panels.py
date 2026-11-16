@@ -27,10 +27,8 @@ async def ensure_panel(name: str, channel: discord.abc.Messageable | None, *, em
     msg = await channel.send(embeds=embeds, view=view, allowed_mentions=discord.AllowedMentions.none())
     db.set_panel(name, channel.id, msg.id)
     if pin:
-        try:
-            await msg.pin()
-        except discord.HTTPException:
-            pass
+        from .cards import pin_quietly
+        await pin_quietly(msg)
     return msg
 
 

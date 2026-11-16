@@ -259,8 +259,9 @@ def label(kind: str) -> str:
 
 
 def bar(pts: int, tgt: int, width: int = 10) -> str:
+    """A thin line that turns thick as the week fills up: ━━━━━─────  (the old █░ blocks looked like noise)."""
     filled = width if not tgt else min(width, round(width * pts / tgt))
-    return "█" * filled + "░" * (width - filled)
+    return "━" * filled + "─" * (width - filled)
 
 
 def week_lines(user_id: int, week: str) -> list[str]:

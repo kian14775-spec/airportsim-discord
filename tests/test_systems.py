@@ -105,7 +105,7 @@ def test_board_rows_line_up():
     assert len(rows) == 4 and rows[0].startswith("Ann")                  # most points first
     assert len({len(r) for r in rows}) == 1, rows                         # monospace columns line up
     assert "on a break" in rows[-1] or any("on a break" in r for r in rows)
-    assert all(ord(ch) < 0x2000 for r in rows for ch in r if ch not in "█░")   # no wide emoji
+    assert all(ord(ch) < 0x2000 for r in rows for ch in r if ch not in "━─")   # no wide emoji
 
 
 # ---------------- tickets ----------------
@@ -173,6 +173,49 @@ def test_resolve_without_network():
     assert asyncio.run(creators.resolve(f"https://www.youtube.com/channel/{cid}")) == cid
     assert asyncio.run(creators.resolve(cid)) == cid
     assert asyncio.run(creators.resolve("https://evil.example.com/@x")) is None     # only youtube.com is fetched
+
+
+def test_every_platform_link():
+    P = creators.platform_of
+    assert P("https://www.tiktok.com/@kian/video/123") == "tiktok" and P("https://vm.tiktok.com/ZM1/") == "tiktok"
+    assert P("https://twitch.tv/kian") == "twitch" and P("https://youtu.be/abcdefghijk") == "youtube"
+    assert P("https://x.com/a/status/1") == "x" and P("https://twitter.com/a") == "x"
+    assert P("https://www.instagram.com/reel/x") == "instagram" and P("https://kick.com/kian") == "kick"
+    assert P("https://nottiktok.com/x") is None and P("javascript:alert(1)") is None and P("tiktok.com/x") is None
+    # one spelling per post, so the same link can't be shared twice
+    yt = "https://www.youtube.com/watch?v=abcdefghijk"
+    assert creators.clean_url("https://youtu.be/abcdefghijk?si=track") == yt
+    assert creators.clean_url("https://m.youtube.com/shorts/abcdefghijk") == yt
+    assert creators.clean_url("https://www.tiktok.com/@kian/video/123?is_from_webapp=1") == \
+        "https://tiktok.com/@kian/video/123"
+    assert creators.as_profile("tiktok", "@kian") == "https://www.tiktok.com/@kian"
+    assert creators.as_profile("twitch", "https://www.twitch.tv/kian") == "https://www.twitch.tv/kian"
+    assert creators.as_profile("twitch", "https://tiktok.com/@kian") is None
+    assert creators.as_profile("tiktok", "bad name!") is None
+
+
+def test_creator_lines_list_platforms():
+    db.run("DELETE FROM creator_links")
+    for p in ("tiktok", "youtube"):
+        db.run("INSERT INTO creator_links VALUES(?, ?, ?)", 5, p, "https://x")
+    assert creators.creator_lines() == ["<@5> · YouTube, TikTok"]
+    db.run("DELETE FROM creator_links")
+
+
+def test_cards_have_no_side_stripe_and_rules_are_whole():
+    from asbot import cards, ui
+    from asbot.core import cfg
+    assert cards.container(cards.text("x"), accent=ui.BAD, banner_name="rules").accent_colour is None
+    rules = cfg()["welcome"]["rules"]
+    assert any("#support" in r for r in rules), rules          # a bare ' #' in yaml is a comment: it ate this once
+    qs = [q for v in cfg()["applications"]["positions"].values() for q in v]
+    assert any("#chat. What do you do" in q for q in qs)
+    from asbot.cogs import verify
+    view = verify.WelcomeCard()
+    assert len(view.children) == 2                               # welcome + (rules -> get started -> menus)
+    ids = [getattr(i, "custom_id", None) for i in view.walk_children()]
+    assert "asbot:verify:start" in ids and "asbot:welcome:help" in ids
+    assert points.bar(5, 10) == "━━━━━─────" and points.bar(0, 10) == "─" * 10
 
 
 # ---------------- bugs ----------------

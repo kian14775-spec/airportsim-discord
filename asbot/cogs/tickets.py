@@ -633,13 +633,17 @@ class ApplyButton(discord.ui.Button):
 
 
 class SupportCard(cards.CardView):
-    """#support: banner, steps, the topic menu, then appeals and applications. The edge is calm grey
-    and only turns amber or red when the game has problems."""
+    """#support: banner, steps, the topic menu, then appeals and applications. No coloured edge: when
+    the game has problems (`accent` set by news.render_status) the status line becomes a ⚠️ line."""
 
     def __init__(self, status_line: str = "", accent: int | None = None):
+        problem = accent is not None
+        status = None
+        if status_line:
+            status = cards.text("⚠️ " + status_line.replace("\n", "\n⚠️ ")) if problem else cards.small(status_line)
         super().__init__(cards.container(
             cards.title("Support", "Stuck, found a bug, or missing a purchase? We'll sort it out."),
-            cards.small(status_line) if status_line else None,
+            status,
             cards.divider(),
             cards.text("**1.** Pick a topic below\n"
                        "**2.** Describe the problem in a sentence or two\n"
@@ -743,14 +747,16 @@ class Tickets(commands.Cog):
                                            "over** takes it straight away."),
             cards.section("Replying", "Type in the post and it reaches the member. Start with `//` for a staff-only "
                                       "note."),
-            cards.section("Quick commands", "`?close` · `?ask` · `?claim` · `?urgent` · `?takeover` · `?r hello` · "
-                                            "`?history` · `?delete` (spam) · `?tickets` · `?t 142` · `?help` for all"),
             cards.section("Teach it", "Fixed something new? Press **Save fix as answer**: a few trigger words + the "
                                       "fix in rough notes, the bot writes the sentence. Or `/answer add` anywhere."),
-            cards.section("Title dots", "🎧 Support Agent on it · 🟢 new · 🔵 claimed · 🟡 waiting on member · "
-                                        "⏳ asked to close · 🔴 urgent"),
+            cards.divider(),
+            cards.section("Quick commands", "`?close` · `?ask` · `?claim` · `?urgent` · `?takeover` · `?r hello` · "
+                                            "`?history` · `?delete` (spam) · `?tickets` · `?t 142` · `?help` for all"),
             cards.section("Buttons", "**Claim** · **Ask to close** (the member confirms) · **Close now** · "
                                      "**Send to dev team** · **Take over** · **Save fix as answer** · priority"),
+            cards.divider(),
+            cards.section("Title dots", "🎧 Support Agent on it · 🟢 new · 🔵 claimed · 🟡 waiting on member · "
+                                        "⏳ asked to close · 🔴 urgent"),
             cards.section("Timers", "No reply in 30 min: Support Team gets one ping. Member silent 48 h: auto-close."),
             cards.divider(),
             cards.section("Finding tickets", "Closing stores the chat and removes the post. **Browse tickets** "

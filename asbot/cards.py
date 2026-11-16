@@ -63,9 +63,11 @@ def row(*items: discord.ui.Item) -> discord.ui.ActionRow:
 
 
 def container(*parts, accent: int | None = None, banner_name: str | None = None) -> discord.ui.Container:
+    """A card. No coloured side stripe (Kian, 2026-11-16: banners + dividers only); `accent` is kept so
+    callers don't change, but ignored. Status lives in the card's words (Game: Down, urgent counts)."""
     items = [banner(banner_name)] if banner_name and banner(banner_name) else []
     items += [p for p in parts if p is not None]
-    return discord.ui.Container(*items, accent_colour=accent)
+    return discord.ui.Container(*items)
 
 
 class CardView(discord.ui.LayoutView):
@@ -126,6 +128,27 @@ async def forum_card(key: str, forum: discord.ForumChannel, name: str, view: dis
                      banners: tuple[str, ...] = (), tags=None, pin: bool = True, lock: bool = True):
     """Keep one bot-owned forum post (guide, templates, board) as a card. An older plain post with the
     same job is replaced, since a post can't switch to the new layout by editing."""
+    async with _card_locks.setdefault(f"forum:{key}", asyncio.Lock()):
+        return await _forum_card(key, forum, name, view, banners, tags, pin, lock)
+
+
+async def pin_quietly(msg: discord.Message) -> None:
+    """Pin without leaving Discord's "X pinned a message" line in the chat."""
+    if msg is None or msg.pinned:
+        return
+    try:
+        await msg.pin()
+        async for m in msg.channel.history(limit=6):
+            if m.type == discord.MessageType.pins_add and m.author.id == msg.channel.guild.me.id \
+                    and m.reference and m.reference.message_id == msg.id:
+                await m.delete()
+                break
+    except discord.HTTPException as e:
+        log.warning("pin %s: %s", msg.id, e)
+
+
+async def _forum_card(key: str, forum: discord.ForumChannel, name: str, view: discord.ui.LayoutView,
+                      banners: tuple[str, ...], tags, pin: bool, lock: bool):
     tid = db.kv_get(key)
     thread = None
     if tid:

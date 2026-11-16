@@ -271,11 +271,7 @@ class Guard(commands.Cog):
             return
         msg = await cards.post_card("alerts_status", sec, cards.CardView(cards.container(cards.title(head, body), accent=accent)))
         db.kv_set("alerts:shown", shown)
-        if msg and not msg.pinned:
-            await msg.pin()
-            async for m in sec.history(limit=5):   # drop the "pinned a message" notice under it
-                if m.type == discord.MessageType.pins_add and m.author.id == g.me.id:
-                    await m.delete()
+        await cards.pin_quietly(msg)
 
     # ---------- messages ----------
     @commands.Cog.listener()
