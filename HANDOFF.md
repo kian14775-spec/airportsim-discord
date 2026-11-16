@@ -1,11 +1,17 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-11-16, s25)
-s26 (11-16 16:30 UTC): "fix discord bot". FOUND: bot is online but still runs OLD code (s23b): cards use the Oct 26
-banners, no Staff board in #stats, no guide in #staff-chat, no #creators-room card. So the GitHub->Railway deploys
-(pushed up to 405725e) never landed: either the Connect Repo step wasn't finished or the builds fail. Code is fine
-(7 test files pass, all 23 cogs import). Next: Kian signs in to Railway (app browser pane or Chrome extension) ->
-check service my-bot Settings > Source + Deployments, fix, redeploy 405725e -> /layout preview -> selftest.
+## RESUME HERE (2026-11-16, s26b)
+s26b (11-16 17:10 UTC): FIXED + LIVE. Cause: the Railway service's Source Repo was the OLD repo kian14775-spec/my-bot
+(branch main), so pushes to airportsim-discord never deployed. Switched it (Kian's Chrome, Claude in Chrome) to
+kian14775-spec/airportsim-discord, branch master, auto-deploy on; also set dashboard Custom Start Command `python bot.py`
+(railway.json config-as-code ends 2026-12-01). s24 + s25 are LIVE (405725e), selftest 63/63 (Manage Events + role
+height now pass). Push -> auto-deploy PROVEN (0095450 = card-race fix: on_ready + creators poll posted the
+#creators-room card twice; cards.post_card now locks per card name; test added). Seen live: Staff board pinned in
+#stats, Staff guide pinned in #staff-chat, creators card, #leads 30-day baseline report (20/26 staff show zero activity:
+real data), #alerts clean. Not eyeballed: s24 banners on the public cards.
+OPEN (need Kian): (1) repo airportsim-discord is PUBLIC (history scanned: no token/.env ever committed) -> make it
+private? (Railway keeps access via its GitHub app). (2) delete the extra pinned creators card from the first boot
+(older of the two 17:05 "Creators and events" posts; the tracked one is the one edited at 17:09).
 s25 = built EVERY system in the restructure plan (Kian, s24: "do whatever u wanna do so u can add everything" + "make sure
 new staff know how to use or operate everything"). s24 hit the 5-h limit mid-build; its uncommitted start (points.py,
 config, layout) was picked up. ALL BUILT + COMMITTED (640a031), NOT DEPLOYED. Live = s23b (c83c0053); s24 (banners v2 +
@@ -28,22 +34,12 @@ audit fixes, 90bed2b) is still undeployed too, so the next deploy ships s24 + s2
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve", service "my-bot",
 volume "my-bot-volume" at /data. Repo folder is `railway link`ed. NO copy runs on the PC.
 RULE: nothing may cost money / eat the Railway credit, no paid AI. Deploys + live server deletes need Kian's OK.
-DEPLOY BLOCKED (2026-11-16, Kian said "Yes, deploy"): Windows Smart App Control is now ON (enforced; it was in
-evaluation on 11-05) and blocks the unsigned railway.exe, from Claude's shells AND the terminal tab (CodeIntegrity
-event 3077; Claude's packaged app sees its own copy under AppData\Local\Packages\Claude_*\LocalCache\Roaming
-pm).
-A script that refreshes the CLI's saved OAuth login and POSTs the tarball itself was refused by the auto-mode safety
-check (handling login tokens outside the official tool), so it was NOT written. Nothing was uploaded; live = s23b.
-Kian picks: (a) deploy via GitHub: private repo + Railway service source = that repo (then deploys = git push),
-(b) turn Smart App Control off himself (Windows Security; can't be turned back on without a reset), (c) explicitly allow
-a token-handling upload script. Railway CLI login also expired 11-05 (the CLI refreshes it on its next run).
+Railway CLI is blocked on this PC (Smart App Control vs unsigned railway.exe) -> deploys = `git push` only.
 Next:
-1. Once deploys work -> `railway up --detach` (retry on upload timeout) -> in Discord `/layout preview` (must match the PC preview
-   above) -> `/layout apply` -> `python tools/selftest.py` -> look: board pinned in #stats, guide pinned in #staff-chat,
-   creators card in #creators-room, s24 banners swapped in, #alerts has no loop errors.
-2. Needs from Kian (selftest flags them): bot needs Manage Events; bot role above Server Moderator / Trial / Support Team /
-   QA / PR roles (promote/demote buttons). Verify-reminder DMs start right after deploy: ~650 unverified members, max 4
-   per 10 min, once each ever (`pulse.verify_nudge_hours: 0` switches it off).
+1. Kian's two OPEN calls above. Then check in Discord: s24 banners on the public cards; `/layout preview` shows no
+   changes (layout was applied from the PC in s26, 6223ec8).
+2. Verify-reminder DMs started with this deploy: ~650 unverified members, max 4 per 10 min, once each ever
+   (`pulse.verify_nudge_hours: 0` switches it off). Watch #alerts the first days.
 3. After 2 weeks of real data: tune duty targets; maybe QA/PR Trial roles; QA hub bridge (invite the bot there), Open
    Cloud key (in-game perks), Frequent Flyer tiers, Discord native onboarding.
 4. Old open items: 15 old Ticket Tool channels in ARCHIVE (ids in backups/cleanup_2026-10-31/), gaps in
@@ -51,7 +47,7 @@ Next:
    M16-M18, M20, M22-M24, template_add disk check.
 
 ## Deploying (Railway)
-- Code change: commit, then `git push` (master). Since 2026-11-16 the Railway service deploys from the private GitHub
+- Code change: commit, then `git push` (master). Since 2026-11-16 the Railway service deploys from the GitHub (PUBLIC!)
   repo kian14775-spec/airportsim-discord (branch master): every push = a new deploy. Push from the terminal tab
   (git's GitHub login is saved via Git Credential Manager). The Railway CLI (`railway up`) is blocked on this PC by
   Windows Smart App Control (unsigned railway.exe), and the CLI login expired 11-05.
@@ -107,3 +103,4 @@ left alone; encode hand-made perms with `external: true` roles + per-channel `pe
 - 2026-11-05 s23b: role order + gradients live; incident radar built (3+ members, same word or bug/purchase topic, 1 h), deployed.
 - 2026-11-16 s24: audit (2 reports) + fixes (C1, H1-H6, layout C1/H1-H3, tidy), banners v2 from the AS2 aircraft hero shots (title behind the jet), server banner + splash, restructure plan (proposal). 56/56 offline tests. Committed 90bed2b, NOT deployed (needs Kian's OK).
 - 2026-11-16 s25: built every restructure-plan system (Staff Duty, departments, bug loop, pulse, events, creators, on-duty routing, staff guide); layout yaml matched to live (role names, hand-made perms); 7 test files pass. Committed 640a031, NOT deployed (needs Kian's OK).
+- 2026-11-16 s26b: FIXED: Railway source repo was the old my-bot repo -> switched to airportsim-discord/master in Kian's Chrome + dashboard start cmd; s24+s25 LIVE, selftest 63/63; push->deploy proven with the card-race fix (0095450). Repo found PUBLIC (no secrets in history).
