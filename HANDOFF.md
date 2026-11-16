@@ -1,37 +1,40 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-11-16, s24)
-s24 = Kian's 3 asks: banners redo, code cleanup, restructure plan. ALL BUILT + COMMITTED (90bed2b), NOT DEPLOYED.
-- BANNERS v2 (Kian: "only use the aircraft hero shots you made", "completely different", "peak"): tools/make_banners.py
-  (PC only, `python -I tools/make_banners.py [name|server]`). Source = Claude Coding/GFX - AS2 Role Renders/Exterior_Aircraft_Shots
-  (Final_9 v2 No_Logo + Heroes Final_post). Style: full-bleed hero shot, giant Bahnschrift Bold title BEHIND the jet (sky-distance
-  matte), tracked captions bottom corners ("AIRPORT SIMULATOR" / per-channel), post = sun+rays, temp zoning, jet local contrast,
-  bloom, grade, vignette, fringe, grain. 1500x500. Map: welcome=Ryanair touchdown, rules=KLM head-on, support=Southwest,
-  help=United climb, stats=Delta touchdown, liveries=American climb, contest=Turkish climb, inbox=Delta climb.
-  assets/server/ = server_banner 960x540 (needs boost lvl 2) + invite_splash (lvl 1), Ryanair aerial, upload by hand.
-  Copies + sheet: Claude Coding/Discord Server Revamp/Banners v2 (2026-11-16)/. cards.py swaps attachments on deploy (hash).
-  NOTE: the shots were made for the AS2 role-renders commission; Kian chose to reuse them here.
-- CODE: audit docs/2026-11-16_audit/ (core_cogs.md, layout_tools_structure.md) + fix logs FIXES_cogs.md / FIXES_layout.md.
-  Fixed C1 (loops die silently -> core.guarded + watchdog restart), H1 ticket rollback, H2 disk budget, H3-H5 guard races,
-  H6 defer-first, M2/M4/M5/M6/M7/M15/M21; layout C1 (apply keeps perms for roles/members the yaml doesn't name), H1 (manual
-  edits kept every apply), H2 (seed no longer overwrites volume state), H3 (backup + readable preview), ids cache,
-  `external: true` roles + `perms_extra:`; dead tools + force file removed. 56/56 offline tests (tests/*.py run as scripts).
-- PLAN: docs/2026-11-16_restructure_plan.md (+ copy in Claude Coding/Discord Server Revamp/). Proposal only: hybrid depts
-  (Mod + PR in main server STAFF rooms, QA keeps its hub, archive dead staff hub), Staff Duty points system, Discord-native
-  board (not Trello: 10-collaborator free cap; not a website: Railway RAM cost), activity + boost ideas, 7 new systems.
+## RESUME HERE (2026-11-16, s25)
+s25 = built EVERY system in the restructure plan (Kian, s24: "do whatever u wanna do so u can add everything" + "make sure
+new staff know how to use or operate everything"). s24 hit the 5-h limit mid-build; its uncommitted start (points.py,
+config, layout) was picked up. ALL BUILT + COMMITTED (640a031), NOT DEPLOYED. Live = s23b (c83c0053); s24 (banners v2 +
+audit fixes, 90bed2b) is still undeployed too, so the next deploy ships s24 + s25 together.
+- NEW (ARCHITECTURE.md "Staff Duty and friends"): asbot/points.py ledger; cogs duty.py (board pinned in #stats: My week /
+  Go on duty / Go off duty / Take a break / How this works; Monday close -> DMs + #leads report + check-in and promotion
+  cards with lead buttons; Thursday nudge; 30-day staff report; Staff guide card pinned in #staff-chat; team welcome DMs),
+  bugs.py (QA card on Bug posts, Confirmed/Fixed tags, game update -> Done + "bug fixed" DMs), pulse.py ("Playing now"
+  counter, one verify-reminder DM, question of the day 18:00 UTC, shot of the week, Wednesday poll reminder, boost card),
+  events.py (Plan an event: Discord event + post + reminder + auto start/end + recap), creators.py (#creators-room card,
+  YouTube RSS -> #socials). Hooks: tickets (solved/fast reply/on-duty pings), strikes (warn), news (support line
+  "N staff on duty · usual reply ~X min", game_updated), hub (/staff: Staff Duty, Plan an event, Staff guide).
+- Texts new staff read: config/bot.yaml `guide:`. Rules/targets: `duty:` (Mod 12, QA 10, PR 10; tune after 2 weeks).
+  The first week after deploy is a warm-up (shown, not judged). The bot never demotes/promotes by itself.
+- LAYOUT now matches live (PC `layout.py preview` is clean): dept roles external by live names (Public Relations Team,
+  Quality Assurance, Star Program, Admin), ping roles plain (Announcements/Development/Social Media/Polls), staff's
+  hand-made #general/#media member perms encoded as perms_extra. Apply only ADDS: voice #playing-now, #leads, #mod-room,
+  #creators-room, Confirmed + Fixed tags, PR/QA access to #staff-chat + #stats.
+- Tests: all 7 files pass (new tests/test_systems.py), pyflakes clean, tools/selftest.py checks the new rooms/perms.
 State: LIVE 24/7 on RAILWAY (free plan, $1/mo credit; bot uses ~$0.5-0.85). Project "exquisite-reprieve", service "my-bot",
-volume "my-bot-volume" at /data. Repo folder is `railway link`ed. NO copy runs on the PC. Live = s23b code (c83c0053).
+volume "my-bot-volume" at /data. Repo folder is `railway link`ed. NO copy runs on the PC.
 RULE: nothing may cost money / eat the Railway credit, no paid AI. Deploys + live server deletes need Kian's OK.
 Next:
-1. Kian OK -> `railway up --detach` (retry if the upload times out), then `python tools/selftest.py`, check in Discord that the
-   new banners swapped in (rules-and-verify, support, help, stats, liveries, contest, inbox) and #alerts has no loop errors.
-   Then `/layout preview` BEFORE any `/layout apply` (volume applied_* is the stale 10-26 copy; expect no perms lines on
-   #general/#media/#dev-logs unless @everyone/Traveler/staff really differ).
-2. Kian picks from the plan's pick list (top: staff baseline report -> departments -> Staff Duty v1 -> verify nudge + daily pulse).
-3. Old open items: delete 15 old Ticket Tool channels in ARCHIVE (ids in backups/cleanup_2026-10-31/), gaps in
-   docs/2026-10-31_logs_security_ideas.md (Trial Mod ban perm, `*` role above bot, 37 invites, webhook), `railway config
-   migrate` before 2026-12-01, Open Cloud key (perks, ban sync). Audit Medium/Cleanup items left: M3, M8-M14, M16-M18,
-   M20 (application row before post, same shape as H1), M22-M24, template_add disk check.
+1. Kian OK -> `railway up --detach` (retry on upload timeout) -> in Discord `/layout preview` (must match the PC preview
+   above) -> `/layout apply` -> `python tools/selftest.py` -> look: board pinned in #stats, guide pinned in #staff-chat,
+   creators card in #creators-room, s24 banners swapped in, #alerts has no loop errors.
+2. Needs from Kian (selftest flags them): bot needs Manage Events; bot role above Server Moderator / Trial / Support Team /
+   QA / PR roles (promote/demote buttons). Verify-reminder DMs start right after deploy: ~650 unverified members, max 4
+   per 10 min, once each ever (`pulse.verify_nudge_hours: 0` switches it off).
+3. After 2 weeks of real data: tune duty targets; maybe QA/PR Trial roles; QA hub bridge (invite the bot there), Open
+   Cloud key (in-game perks), Frequent Flyer tiers, Discord native onboarding.
+4. Old open items: 15 old Ticket Tool channels in ARCHIVE (ids in backups/cleanup_2026-10-31/), gaps in
+   docs/2026-10-31_logs_security_ideas.md, `railway config migrate` before 2026-12-01, audit Medium items M3, M8-M14,
+   M16-M18, M20, M22-M24, template_add disk check.
 
 ## Deploying (Railway)
 - Code change: `railway up --detach` from the repo (CLI login lives in the real user profile; from Claude's
@@ -85,3 +88,4 @@ left alone; encode hand-made perms with `external: true` roles + per-channel `pe
 - 2026-11-05 s23: log cards show real names (asbot/names.py), join/leave cards with avatar + 'stayed X'; deployed, selftest 50/50; no real join/leave card seen yet.
 - 2026-11-05 s23b: role order + gradients live; incident radar built (3+ members, same word or bug/purchase topic, 1 h), deployed.
 - 2026-11-16 s24: audit (2 reports) + fixes (C1, H1-H6, layout C1/H1-H3, tidy), banners v2 from the AS2 aircraft hero shots (title behind the jet), server banner + splash, restructure plan (proposal). 56/56 offline tests. Committed 90bed2b, NOT deployed (needs Kian's OK).
+- 2026-11-16 s25: built every restructure-plan system (Staff Duty, departments, bug loop, pulse, events, creators, on-duty routing, staff guide); layout yaml matched to live (role names, hand-made perms); 7 test files pass. Committed 640a031, NOT deployed (needs Kian's OK).
