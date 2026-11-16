@@ -125,11 +125,8 @@ categories:
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: staff-chat, was: [staff-chat, moderator-only], perms: team}
-      - {key: stats, name: stats, was: [stats], perms: team, topic: "Staff board (your week, on duty, take a break) + live numbers and the daily report."}
-      - {key: leads, name: leads, perms: leads, topic: "Leads only: weekly check-ins, promotions, staff reports."}
-      - {key: mod_room, name: mod-room, perms: mod_room, topic: "Moderation team: hand-offs, tricky cases, who's on."}
-      - {key: creators_room, name: creators-room, perms: creators, topic: "PR team + Star Program creators: videos, posts, events."}
+      - {key: staff_chat,   name: staff-chat, was: [staff-chat, moderator-only], perms: team, topic: "Talk to the team. New or stuck? The Staff guide is pinned here."}
+      - {key: stats, name: stats, was: [stats], perms: team, topic: "Two cards that update by themselves: live numbers (reports in its menu) and the Staff board (your week, on duty, breaks)."}
       - key: inbox
         name: inbox
         was: [inbox]
@@ -142,6 +139,8 @@ categories:
         type: forum
         topic: Every staff application is a post here. Vote, discuss, then accept or deny.
         tags: [Pending, Accepted, Denied]
+      - {key: leads, name: leads, perms: leads, topic: "Leads only. One card, the Leads desk: check-ins, promotions and reports."}
+      - {key: creators_room, name: creators-room, perms: creators, topic: "PR team + Star Program creators: share videos, clips and streams, plan events."}
 
   - key: logs_cat
     name: LOGS
@@ -185,12 +184,6 @@ presets:
   leads:
     "@everyone": {deny: [view_channel]}
     leads:       {allow: [view_channel, send_messages, send_messages_in_threads, read_message_history]}
-  mod_room:
-    "@everyone": {deny: [view_channel]}
-    leads:       {allow: [view_channel, send_messages, read_message_history]}
-    moderator:   {allow: [view_channel, send_messages, read_message_history]}
-    trial_mod:   {allow: [view_channel, send_messages, read_message_history]}
-    support_team: {allow: [view_channel, send_messages, read_message_history]}
   creators:
     "@everyone": {deny: [view_channel]}
     leads:       {allow: [view_channel, send_messages, read_message_history]}

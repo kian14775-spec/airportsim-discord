@@ -2,9 +2,9 @@
 
 Board (#stats, pinned): every team's week, who is on duty and who is on a break, plus the buttons
 My week / Go on duty / Go off duty / Take a break / How this works.
-Monday 00:00 UTC: last week closes. Everyone gets a short DM, #leads gets the report, and cards for
-2 quiet weeks in a row (check-in) or 4 strong weeks as Trial (promotion). Leads press the buttons:
-the bot never demotes or promotes by itself, and every press is logged in #actions.
+Monday 00:00 UTC: last week closes. Everyone gets a short DM. #leads is ONE card, the Leads desk: last week's
+summary, and check-ins (2 quiet weeks) / promotions (4 strong weeks as Trial) waiting for a lead, who picks a
+name and decides privately. The bot never demotes or promotes by itself; every press is logged in #actions.
 Thursday: one friendly reminder, only to people far from their goal.
 Points come from tickets.py (solved, fast reply), strikes.py (warns), the audit log here (actions with
 a reason), public chat (active days) and bugs/events/creators. Rules + targets: config/bot.yaml `duty:`.
@@ -282,8 +282,9 @@ class ReviewButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:d
         m = g.get_member(self.uid)
         title = f"Check-in: {m.display_name if m else names.who(self.uid, link=False)}"
         if m is None:
-            return await interaction.response.edit_message(view=lead_result(
+            await interaction.response.edit_message(view=lead_result(
                 title, "They've left the server.", f"Closed by {lead.display_name}"))
+            return await _desk_done(interaction, "review", self.uid)
         what, problem = "", None
         if self.act == "brk":
             points.set_leave(m.id, 14, f"break given by {lead.display_name}")
@@ -318,6 +319,7 @@ class ReviewButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:d
         await interaction.response.edit_message(view=lead_result(
             title, f"{m.mention} had quiet weeks on the Staff board.", f"{lead.display_name} {what} {m.display_name}"))
         await log_staff(g, f"Staff Duty: {lead.mention} {what} {m.mention}", kind="Moderation", event="duty_review")
+        await _desk_done(interaction, "review", self.uid)
 
 
 class PromoButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:dp:(?P<act>yes|no):(?P<uid>\d+)"):
@@ -336,13 +338,15 @@ class PromoButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:dp
         g, lead, m = interaction.guild, interaction.user, interaction.guild.get_member(self.uid)
         title = f"Ready for promotion: {m.display_name if m else self.uid}"
         if m is None:
-            return await interaction.response.edit_message(view=lead_result(title, "They've left the server.",
-                                                                            f"Closed by {lead.display_name}"))
+            await interaction.response.edit_message(view=lead_result(title, "They've left the server.",
+                                                                     f"Closed by {lead.display_name}"))
+            return await _desk_done(interaction, "promo", self.uid)
         if self.act == "no":
             await interaction.response.edit_message(view=lead_result(title, f"{m.mention} had strong weeks as Trial.",
                                                                      f"{lead.display_name}: not yet"))
-            return await log_staff(g, f"Staff Duty: {lead.mention} kept {m.mention} as Trial for now",
-                                   kind="Moderation", event="duty_review")
+            await log_staff(g, f"Staff Duty: {lead.mention} kept {m.mention} as Trial for now",
+                            kind="Moderation", event="duty_review")
+            return await _desk_done(interaction, "promo", self.uid)
         d = points.dept_of(m)
         dc = points.departments().get(d or "", {})
         trial = role(g, dc["trial"]) if dc.get("trial") else None
@@ -359,6 +363,7 @@ class PromoButton(discord.ui.DynamicItem[discord.ui.Button], template=r"asbot:dp
                              "Thanks for all the work you put in.", ui.GOOD))
         await log_staff(g, f"Staff Duty: {lead.mention} promoted {m.mention} to {full.mention}", kind="Moderation",
                         event="duty_review")
+        await _desk_done(interaction, "promo", self.uid)
 
 
 def review_card(m: discord.Member, weeks: int, week: str) -> cards.CardView:
@@ -394,6 +399,124 @@ def report_view(guild: discord.Guild, week: str, results: list[dict]) -> cards.C
         hit = sum(r["status"] == "green" for r in rows)
         parts += [cards.divider(), cards.section(f"{d['name']} · {hit}/{len(rows)} hit the goal", f"```\n{body}\n```")]
     return cards.CardView(cards.container(*parts, accent=ui.SLATE))
+
+
+# ---------------------------------------------------------------- leads desk: #leads is ONE card
+# Kian (2026-11-16): one card that updates, not a new card per report/check-in. Check-ins and promotions
+# wait on the desk; a lead picks a name, decides privately, and it drops off. Reports open privately too.
+KIND_WORDS = {"review": "Check-in", "promo": "Promotion"}
+
+
+def open_items() -> list[dict]:
+    return db.kv_get("duty:open", []) or []
+
+
+def add_open(kind: str, uid: int, weeks: int, week: str) -> int:
+    """Put a check-in ('review') or promotion ('promo') on the desk. 1 if it wasn't there yet."""
+    items = open_items()
+    new = 0 if any(i["kind"] == kind and i["uid"] == uid for i in items) else 1
+    items = [i for i in items if not (i["kind"] == kind and i["uid"] == uid)]
+    db.kv_set("duty:open", items + [{"kind": kind, "uid": uid, "weeks": weeks, "week": week}])
+    return new
+
+
+def close_open(kind: str, uid: int) -> None:
+    db.kv_set("duty:open", [i for i in open_items() if not (i["kind"] == kind and i["uid"] == uid)])
+
+
+def _why(i: dict) -> str:
+    return (f"under half their goal {i['weeks']} weeks in a row" if i["kind"] == "review"
+            else f"hit the goal {i['weeks']} weeks in a row as Trial")
+
+
+def week_summary(week: str | None) -> str:
+    rows = db.q("SELECT dept, status FROM duty_weeks WHERE week=?", week) if week else []
+    if not rows:
+        return "The first full week closes on Monday. Its results show here."
+    bits = []
+    for key, d in points.departments().items():
+        mine = [r for r in rows if r["dept"] == key]
+        if mine:
+            bits.append(f"**{d['name']}** {sum(r['status'] == 'green' for r in mine)}/{len(mine)} hit the goal")
+    return " · ".join(bits)
+
+
+class DeskPick(discord.ui.Select):
+    def __init__(self, guild: discord.Guild | None = None):
+        def who(uid):
+            m = guild.get_member(uid) if guild else None
+            return m.display_name if m else names.who(uid, link=False)
+        opts = [discord.SelectOption(label=f"{KIND_WORDS[i['kind']]}: {who(i['uid'])}"[:100],
+                                     value=f"{i['kind']}:{i['uid']}", description=_why(i)[:100])
+                for i in open_items()[:25]]
+        super().__init__(placeholder="Pick someone to decide" if opts else "Nothing waiting", disabled=not opts,
+                         options=opts or [discord.SelectOption(label="Nothing waiting", value="none")],
+                         custom_id="asbot:desk:pick")
+
+    async def callback(self, interaction: discord.Interaction):
+        if not points.is_lead(interaction.user):
+            return await interaction.response.send_message("Only leads can decide this.", ephemeral=True)
+        kind, _, uid = self.values[0].partition(":")
+        item = next((i for i in open_items() if i["kind"] == kind and str(i["uid"]) == uid), None)
+        if item is None:
+            return await interaction.response.send_message("That one's already been decided.", ephemeral=True)
+        m = interaction.guild.get_member(item["uid"])
+        if m is None:
+            close_open(kind, item["uid"])
+            await interaction.response.send_message("They've left the server, so it's off the desk.", ephemeral=True)
+            return await _desk_refresh(interaction.client)
+        view = review_card(m, item["weeks"], item["week"]) if kind == "review" else promo_card(m, item["weeks"])
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class LeadReportPick(discord.ui.Select):
+    def __init__(self):
+        super().__init__(placeholder="Open a report (only you see it)", custom_id="asbot:desk:report", options=[
+            discord.SelectOption(label="Last week, everyone", value="week", description="Points per person per team"),
+            discord.SelectOption(label="Staff report · last 30 days", value="30",
+                                 description="Tickets, mod actions, warnings, messages per person")])
+
+    async def callback(self, interaction: discord.Interaction):
+        if not points.is_lead(interaction.user):
+            return await interaction.response.send_message("Only leads can open these.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        g = interaction.guild
+        if self.values[0] == "30":
+            return await interaction.followup.send(view=await staff_report(g), ephemeral=True)
+        week = db.kv_get("duty:closed")
+        rows = [dict(r) for r in db.q("SELECT * FROM duty_weeks WHERE week=?", week)] if week else []
+        if not rows:
+            return await interaction.followup.send("No week has closed yet. The first one closes on Monday.",
+                                                   ephemeral=True)
+        await interaction.followup.send(view=report_view(g, week, rows), ephemeral=True)
+
+
+def desk_view(guild: discord.Guild | None) -> cards.CardView:
+    items = open_items()
+    waiting = "\n".join(f"**{KIND_WORDS[i['kind']]}** · <@{i['uid']}> · {_why(i)}" for i in items[:15])
+    wk = db.kv_get("duty:closed")
+    has_week = bool(wk and db.one("SELECT 1 n FROM duty_weeks WHERE week=?", wk))
+    return cards.CardView(cards.container(
+        cards.title("Leads desk", "Everything that needs a lead, in one place. This card updates by itself."),
+        cards.divider(),
+        cards.section("Needs a decision", waiting or "Nothing waiting."),
+        cards.row(DeskPick(guild)),
+        cards.divider(),
+        cards.section("Last week" + (f" · week {int(wk[-2:])}" if has_week else ""),
+                      week_summary(wk if has_week else None)),
+        cards.row(LeadReportPick()),
+        cards.small(f"Updated <t:{int(db.now())}:R> · the bot never promotes or demotes by itself")))
+
+
+async def _desk_refresh(client) -> None:
+    cog = client.get_cog("Duty")
+    if cog:
+        await cog.render_desk()
+
+
+async def _desk_done(interaction: discord.Interaction, kind: str, uid: int) -> None:
+    close_open(kind, uid)
+    await _desk_refresh(interaction.client)
 
 
 # ---------------------------------------------------------------- 30-day staff report
@@ -518,6 +641,7 @@ class Duty(commands.Cog):
         bot.add_view(cards.CardView(cards.container(board_buttons())))
         bot.add_view(GuideCard())
         bot.add_dynamic_items(ReviewButton, PromoButton)
+        bot.add_view(cards.CardView(cards.container(cards.row(DeskPick()), cards.row(LeadReportPick()))))
         self.weekly.start()
         self.board.start()
 
@@ -559,6 +683,31 @@ class Duty(commands.Cog):
         msg = await cards.post_card("staff_guide", chat, GuideCard()) if chat else None
         await cards.pin_quietly(msg)
         await self.render()
+        await self.render_desk()
+
+    async def render_desk(self, new: int = 0):
+        """#leads: the Leads desk card. When new decisions arrive, ONE short note says so (the previous
+        note is removed), because edits don't make the channel unread."""
+        g = self.guild
+        leads = channel(g, "leads") if g else None
+        if leads is None:
+            return
+        msg = await cards.post_card("leads_desk", leads, desk_view(g))
+        await cards.pin_quietly(msg)
+        old = db.kv_get("duty:desk_note")
+        if old and (new or not open_items()):
+            try:
+                await (await leads.fetch_message(old)).delete()
+            except discord.HTTPException:
+                pass
+            db.kv_set("duty:desk_note", None)
+        if new:
+            try:
+                note = await leads.send(f"{new} new decision{'s' if new != 1 else ''} on the Leads desk.",
+                                        allowed_mentions=discord.AllowedMentions.none())
+                db.kv_set("duty:desk_note", note.id)
+            except discord.HTTPException as e:
+                log.warning("desk note: %s", e)
 
     @tasks.loop(minutes=2)
     @guarded
@@ -587,12 +736,6 @@ class Duty(commands.Cog):
                 and db.kv_get("duty:start_week") != wk:
             db.kv_set("duty:nudged", wk)
             await self.nudge(g, wk)
-        if db.kv_get("duty:baseline") is None and channel(g, "leads"):   # pick #1: the 30-day report, once
-            db.kv_set("duty:baseline", db.now())
-            try:
-                await channel(g, "leads").send(view=await staff_report(g), allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException as e:
-                log.warning("baseline report: %s", e)
 
     @weekly.before_loop
     @board.before_loop
@@ -602,12 +745,7 @@ class Duty(commands.Cog):
     async def close_week(self, g: discord.Guild, week: str):
         results = points.close_week(g, week)
         s = points.settings()
-        leads = channel(g, "leads")
-        if leads and results:
-            try:
-                await leads.send(view=report_view(g, week, results), allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException as e:
-                log.warning("duty report: %s", e)
+        new = 0                                          # decisions added to the Leads desk
         for r in results:
             m = g.get_member(r["user_id"])
             if m is None:
@@ -626,13 +764,14 @@ class Duty(commands.Cog):
                 await asyncio.sleep(1.2)
             red = points.streak(m.id, week, "red")
             need = int(s.get("review_after_red", 2))
-            if leads and red >= need and (red - need) % 2 == 0:
-                await leads.send(view=review_card(m, red, week), allowed_mentions=discord.AllowedMentions.none())
+            if red >= need and (red - need) % 2 == 0:
+                new += add_open("review", m.id, red, week)
             green = points.streak(m.id, week, "green")
             want = int(s.get("promote_after_green", 4))
-            if leads and points.is_trial(m) and green and green % want == 0:
-                await leads.send(view=promo_card(m, green), allowed_mentions=discord.AllowedMentions.none())
+            if points.is_trial(m) and green and green % want == 0:
+                new += add_open("promo", m.id, green, week)
         points.touch()
+        await self.render_desk(new)
 
     async def nudge(self, g: discord.Guild, week: str):
         below = float(points.settings().get("nudge_below", 0.4))

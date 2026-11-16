@@ -331,7 +331,7 @@ guide:                      # the staff guide (cogs/duty.py): pinned in #staff-c
   leads:
     title: For leads
     body: |
-      #leads gets the weekly report every Monday, plus a card when someone needs a check-in (2 quiet weeks in a row) or looks ready for promotion (4 strong weeks as Trial).
-      Every card has buttons, and the bot only does what you press. Each press is logged in #actions.
+      #leads is one card, the **Leads desk**. It lists who needs a check-in (2 quiet weeks in a row) or looks ready for promotion (4 strong weeks as Trial). Pick a name in its menu and decide privately; the bot only does what you press, and each press is logged in #actions.
+      When something new lands on the desk on Monday, one short note in #leads says so.
       **Give points** (in /staff > Staff Duty) adds credit for work the bot can't see, like helping in voice or running a test session.
-      **Staff report** shows the last 30 days per person: tickets, actions, warnings and when they last talked.
+      **Reports:** the desk's report menu shows last week for everyone, or the last 30 days per person (tickets, actions, warnings, messages). Daily numbers live on the card in #stats (its menu has every report).

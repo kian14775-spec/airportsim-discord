@@ -3,7 +3,9 @@
 What counts as clutter (nothing else is ever touched):
   - a second copy of a one-of-a-kind card (same title twice, e.g. two "Creators and events" cards):
     the copy the bot still edits (newest edit) stays, the others go;
-  - Discord's "Airport Simulator pinned a message" lines the bot caused.
+  - Discord's "Airport Simulator pinned a message" lines the bot caused;
+  - report posts the bot no longer makes (RETIRED: daily/weekly reports, the old 30-day post, weekly staff
+    reports): since 2026-11-16 they open privately from the menus on the #stats card and the Leads desk.
 Only these channels are looked at (layout keys): CARD_CHANNELS. Announcements, dev-logs, liveries,
 socials, chat, media and every member post are never read for deleting. Only the bot's own messages.
 Before deleting, every message is saved to backups/tidy_<utc>.json (text + components).
@@ -25,9 +27,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 import discord  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-CARD_CHANNELS = ("welcome", "support", "stats", "staff_chat", "creators_room", "leads", "mod_room")
+CARD_CHANNELS = ("welcome", "support", "stats", "staff_chat", "creators_room", "leads")
 ONE_OF_A_KIND = ("Welcome to Airport Simulator", "Support", "Right now", "Staff board", "Staff guide",
-                 "Creators and events")
+                 "Creators and events", "Leads desk")
+RETIRED = ("Daily report", "Weekly support report", "Staff report · last 30 days", "Staff week ")   # prefix match
 PIN_NOTICE = 6          # Discord message type CHANNEL_PINNED_MESSAGE
 LOOK_BACK = 100
 
@@ -60,10 +63,18 @@ async def main(apply: bool):
             cid = ids.get(f"ch:{key}")
             if not cid:
                 continue
-            msgs = [m for m in await c.http.logs_from(cid, LOOK_BACK) if int(m["author"]["id"]) == me]
+            msgs, before = [], None
+            for _ in range(5):                      # up to 500 back: old daily reports go back weeks
+                batch = await c.http.logs_from(cid, LOOK_BACK, before=before)
+                if not batch:
+                    break
+                msgs += [m for m in batch if int(m["author"]["id"]) == me]
+                before = batch[-1]["id"]
             for m in msgs:
                 if m["type"] == PIN_NOTICE:
                     doomed.append((cid, m, f"#{key}: pin notice"))
+                elif (t := title_of(m)) and any(t.startswith(r) for r in RETIRED):
+                    doomed.append((cid, m, f"#{key}: old '{t}' post from {m['timestamp'][:10]}"))
             cardz: dict[str, list[dict]] = {}
             for m in msgs:
                 t = title_of(m)

@@ -1,7 +1,8 @@
-"""Staff #stats: a live card pinned on top (every 5 min) and a daily report at midnight UTC.
+"""Staff #stats: ONE live card (every 5 min) with yesterday's line and an "Open a report" menu.
 
-The report compares start-of-day snapshots, so "visits today" or "group members today" are
-real daily gains. Discord joins/leaves and peak players are counted as they happen.
+Nothing is posted daily or weekly any more: reports (today so far, any of the last 7 days, the
+support week) open privately from the menu. Reports compare start-of-day snapshots, so "visits
+today" or "group members today" are real daily gains. Joins/leaves and peak players are counted live.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import discord
 from discord.ext import commands, tasks
 
 from .. import cards, db, names, ui
-from ..core import cfg, channel, game_stats, game_votes, group_info, guarded, log
+from ..core import cfg, channel, game_stats, game_votes, group_info, guarded
 from ..panels import drop_panel
 
 
@@ -149,10 +150,41 @@ def weekly_card(end: dt.date) -> cards.CardView:
     return cards.CardView(cards.container(*parts, accent=ui.SLATE))
 
 
+class ReportPick(discord.ui.Select):
+    """On the live card: any report, shown only to the person who picks it."""
+
+    def __init__(self):
+        d = today()
+        opts = [discord.SelectOption(label="Today so far", value="today", description="Updates as the day goes"),
+                discord.SelectOption(label="Support · last 7 days", value="week",
+                                     description="Tickets, top problems, missing answers, slowest replies")]
+        for back in range(1, 8):
+            day = d - dt.timedelta(days=back)
+            if db.kv_get(f"snap:{day:%Y-%m-%d}") is not None or back == 1:
+                opts.append(discord.SelectOption(label="Yesterday" if back == 1 else f"{day:%A %d %b}",
+                                                 value=f"day:{day:%Y-%m-%d}", description="Daily report"))
+        super().__init__(placeholder="Open a report (only you see it)", options=opts, custom_id="asbot:stats:report")
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        v = self.values[0]
+        if v == "today":
+            view = await interaction.client.get_cog("Stats").so_far()
+        elif v == "week":
+            view = weekly_card(today())
+        else:
+            day = dt.date.fromisoformat(v[4:])
+            start = db.kv_get(f"snap:{day:%Y-%m-%d}", {})
+            end = db.kv_get(f"snap:{day + dt.timedelta(days=1):%Y-%m-%d}") or await snapshot(interaction.guild)
+            view = report_card(day, start, end)
+        await interaction.followup.send(view=view, ephemeral=True)
+
+
 class Stats(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.live = None
+        bot.add_view(cards.CardView(cards.container(cards.row(ReportPick()))))   # the menu keeps working after restarts
         self.tick.start()
 
     def cog_unload(self):
@@ -184,25 +216,11 @@ class Stats(commands.Cog):
         if not out:
             return
         d = today()
-        key, ykey = f"{d:%Y-%m-%d}", f"{d - dt.timedelta(days=1):%Y-%m-%d}"
         snap = await snapshot(g)
-        if db.kv_get(f"snap:{key}") is None:          # first tick of a new UTC day
-            db.kv_set(f"snap:{key}", snap)
-            if not db.kv_get(f"reported:{ykey}") and db.kv_get(f"snap:{ykey}") is not None:
-                try:
-                    await out.send(view=report_card(d - dt.timedelta(days=1), db.kv_get(f"snap:{ykey}", {}), snap))
-                except discord.HTTPException as e:
-                    log.warning("daily report: %s", e)
-                db.kv_set(f"reported:{ykey}", True)
-        week = f"{d:%G-W%V}"
-        if db.kv_get("weekly_report") is None:   # first run: start next Monday (no Support Agent data before)
-            db.kv_set("weekly_report", week)
-        if d.weekday() == 0 and db.kv_get("weekly_report") != week:   # Monday: last week's support report
-            try:
-                await out.send(view=weekly_card(d), allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException as e:
-                log.warning("weekly report: %s", e)
-            db.kv_set("weekly_report", week)
+        if db.kv_get(f"snap:{d:%Y-%m-%d}") is None:   # first tick of a new UTC day: the day's starting point
+            db.kv_set(f"snap:{d:%Y-%m-%d}", snap)
+        # No daily/weekly messages any more (Kian: one card that updates, not 100 reports): the live card
+        # shows yesterday, and its "Open a report" menu shows any report privately.
         await self.update_live(out, snap)
 
     async def update_live(self, out, snap: dict):
@@ -215,9 +233,13 @@ class Stats(commands.Cog):
         urgent = q("SELECT COUNT(*) n FROM tickets WHERE status!='closed' AND priority='urgent'")
         apps = q("SELECT COUNT(*) n FROM applications WHERE status='pending'")
         key = f"{today():%Y-%m-%d}"
-        accent = ui.BAD if urgent else (ui.WAIT if need else ui.SLATE)   # colour only when tickets wait
         inbox = channel(self.guild, "inbox")
         verified = db.one("SELECT COUNT(*) n FROM links WHERE linked_at>=?", day_bounds(today())[0])["n"]
+        yd = today() - dt.timedelta(days=1)
+        ykey, yt = f"{yd:%Y-%m-%d}", ticket_numbers(yd)
+        yj, yl = db.kv_get(f"joins:{ykey}", 0), db.kv_get(f"leaves:{ykey}", 0)
+        yesterday = (f"**Yesterday** · {signed(yj - yl)} members ({yj} joined, {yl} left) · {yt['closed']} tickets "
+                     f"handled · peak {db.kv_get(f'peak:{ykey}', 0):,} playing")
         view = cards.CardView(cards.container(
             cards.title("Right now", f"Updated <t:{int(db.now())}:R> · refreshes every 5 minutes"),
             cards.divider(),
@@ -234,17 +256,12 @@ class Stats(commands.Cog):
                                              [("Verified", verified), ("Members", short(snap.get("members")))],
                                              [("Group", short(snap.get("group")))])),
             cards.divider(),
+            cards.text(yesterday),
+            cards.row(ReportPick()),
             cards.row(discord.ui.Button(label="Open the inbox", url=inbox.jump_url)) if inbox else None,
-            accent=accent, banner_name="stats"))
+            banner_name="stats"))
         msg = await cards.post_card("staff_summary", out, view, banners=("stats",))
-        if msg and not msg.pinned:
-            try:
-                await msg.pin()
-                async for m in out.history(limit=5):   # drop the "pinned a message" notice under it
-                    if m.type == discord.MessageType.pins_add and m.author.id == self.guild.me.id:
-                        await m.delete()
-            except discord.HTTPException:
-                pass
+        await cards.pin_quietly(msg)
 
     @tick.before_loop
     async def _ready(self):

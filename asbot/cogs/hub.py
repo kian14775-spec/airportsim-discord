@@ -1,5 +1,5 @@
 """/help for members and /staff for the team: one tidy panel each instead of many commands.
-The live staff card and daily report live in stats.py.
+The live staff card (with its report menu) lives in stats.py.
 """
 from __future__ import annotations
 

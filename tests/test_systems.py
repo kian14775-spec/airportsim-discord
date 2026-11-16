@@ -218,6 +218,35 @@ def test_cards_have_no_side_stripe_and_rules_are_whole():
     assert not hasattr(points, "bar")                             # Kian: no progress bar on the board
 
 
+# ---------------- staff area: one card per job, no report spam ----------------
+def test_leads_desk_holds_decisions():
+    db.kv_set("duty:open", [])
+    view = duty.desk_view(None)
+    pick = next(i for i in view.walk_children() if getattr(i, "custom_id", None) == "asbot:desk:pick")
+    assert pick.disabled and "Nothing waiting" in str([c.content for c in view.walk_children() if hasattr(c, "content")])
+    assert duty.add_open("review", 7, 2, "2026-W47") == 1 and duty.add_open("review", 7, 2, "2026-W47") == 0
+    assert duty.add_open("promo", 8, 4, "2026-W47") == 1
+    pick = next(i for i in duty.desk_view(None).walk_children() if getattr(i, "custom_id", None) == "asbot:desk:pick")
+    assert not pick.disabled and {o.value for o in pick.options} == {"review:7", "promo:8"}
+    duty.close_open("review", 7)
+    assert [i["uid"] for i in duty.open_items()] == [8]
+    db.kv_set("duty:open", [])
+    fresh()
+    db.run("INSERT INTO duty_weeks VALUES(1, '2026-W46', 'mod', 12, 12, 'green')")
+    db.run("INSERT INTO duty_weeks VALUES(2, '2026-W46', 'mod', 1, 12, 'red')")
+    assert "1/2 hit the goal" in duty.week_summary("2026-W46")
+    assert "first full week" in duty.week_summary(None)
+
+
+def test_staff_channels_never_get_new_report_posts():
+    src = (ROOT / "asbot" / "cogs" / "stats.py").read_text(encoding="utf-8") + \
+        (ROOT / "asbot" / "cogs" / "duty.py").read_text(encoding="utf-8")
+    assert "out.send(" not in src and "leads.send(view=" not in src      # reports open from menus instead
+    from asbot.cogs import stats
+    values = [o.value for o in stats.ReportPick().options]
+    assert values[:2] == ["today", "week"] and any(v.startswith("day:") for v in values)
+
+
 # ---------------- bugs ----------------
 def test_bug_card_buttons_follow_the_state():
     db.run("DELETE FROM bugs")
