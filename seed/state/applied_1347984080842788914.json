@@ -6,10 +6,6 @@
   "cat:news": {
     "name": "AIRPORT SIMULATOR"
   },
-  "ch:live_count": {
-    "name": "playing-now",
-    "topic": null
-  },
   "ch:announcements": {
     "name": "announcements",
     "topic": "Big news about Airport Simulator."
@@ -64,23 +60,11 @@
   },
   "ch:staff_chat": {
     "name": "staff-chat",
-    "topic": null
+    "topic": "Talk to the team. New or stuck? The Staff guide is pinned here."
   },
   "ch:stats": {
     "name": "stats",
-    "topic": "Staff board (your week, on duty, take a break) + live numbers and the daily report."
-  },
-  "ch:leads": {
-    "name": "leads",
-    "topic": "Leads only: weekly check-ins, promotions, staff reports."
-  },
-  "ch:mod_room": {
-    "name": "mod-room",
-    "topic": "Moderation team: hand-offs, tricky cases, who's on."
-  },
-  "ch:creators_room": {
-    "name": "creators-room",
-    "topic": "PR team + Star Program creators: videos, posts, events."
+    "topic": "Two cards that update by themselves: live numbers (reports in its menu) and the Staff board (your week, on duty, breaks)."
   },
   "ch:inbox": {
     "name": "inbox",
@@ -89,6 +73,14 @@
   "ch:applications": {
     "name": "applications",
     "topic": "Every staff application is a post here. Vote, discuss, then accept or deny."
+  },
+  "ch:leads": {
+    "name": "leads",
+    "topic": "Leads only. One card, the Leads desk: check-ins, promotions and reports."
+  },
+  "ch:creators_room": {
+    "name": "creators-room",
+    "topic": "PR team + Star Program creators: share videos, clips and streams, plan events."
   },
   "cat:logs_cat": {
     "name": "LOGS"

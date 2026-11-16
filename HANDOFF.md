@@ -1,6 +1,18 @@
 # Airport Simulator Discord bot - HANDOFF
 
-## RESUME HERE (2026-11-16, s26c)
+## RESUME HERE (2026-11-16, s26d)
+s26d (11-16 18:00 UTC): STAFF AREA TIDY LIVE (ac136e0), seen in Discord, selftest 61/61.
+- Rule (Kian): one card per job that updates in place; never a new message per report.
+- #stats = 2 messages only: "Right now" (5 min, + Yesterday line + "Open a report" menu: today, last 7 days, support
+  week, all private) and the Staff board. stats.py posts NOTHING daily/weekly any more (test guards it).
+- #leads = 1 card, the Leads desk (duty.py desk_view): check-ins/promotions wait in kv duty:open, lead picks a name ->
+  decides privately (ReviewButton/PromoButton call _desk_done) -> drops off. Report menu: last week + 30-day report.
+  Monday close adds to the desk + ONE short note (old note deleted). No more cards per person.
+- #mod-room DELETED (was empty; backup backups/channel_mod-room_*.json). Staff order: staff-chat, stats, inbox,
+  applications, leads, creators-room; plain topics. Applied from the PC (layout.py apply --from-pc; preview clean
+  before: topics + order only). seed/state/applied_* committed after. #bot-cmds (staff-made) not in the layout, left alone.
+- tidy_channels.py now also removes RETIRED report posts: removed 21 daily + 3 weekly + 30-day + 1 old pin notice
+  (backups/tidy_2026-11-16_175632.json). Re-check: "Nothing to tidy".
 s26c (11-16 17:50 UTC): CARD REVAMP LIVE (7b0c529 + e3e068d), seen in Discord via Kian's Chrome.
 - Kian's taste (memory feedback_discord-cards-clean.md): NO coloured side stripe on any card (cards.container ignores
   accent), NO progress bars (board = name + "3 / 10" + done), banners + headings + dividers only.
@@ -118,3 +130,4 @@ left alone; encode hand-made perms with `external: true` roles + per-channel `pe
 - 2026-11-16 s25: built every restructure-plan system (Staff Duty, departments, bug loop, pulse, events, creators, on-duty routing, staff guide); layout yaml matched to live (role names, hand-made perms); 7 test files pass. Committed 640a031, NOT deployed (needs Kian's OK).
 - 2026-11-16 s26b: FIXED: Railway source repo was the old my-bot repo -> switched to airportsim-discord/master in Kian's Chrome + dashboard start cmd; s24+s25 LIVE, selftest 63/63; push->deploy proven with the card-race fix (0095450). Repo found PUBLIC (no secrets in history).
 - 2026-11-16 s26c: card revamp LIVE: no side stripes, no bars (Kian), rules + get started joined, YAML ' #' comment bug fixed (rule 5 + app question), creators on every platform (link/share/live), pin notices gone, tools/tidy_channels.py (ran: 3 pin notices + 1 old creators card removed, backups/tidy_*). Seen in Discord.
+- 2026-11-16 s26d: staff area tidy LIVE: #stats = 2 updating cards (report menu, no daily posts), #leads = Leads desk card, #mod-room deleted (empty, backup), staff order + topics applied from PC, 26 old report posts removed (backup). selftest 61/61.
