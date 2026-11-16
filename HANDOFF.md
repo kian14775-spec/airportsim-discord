@@ -1,6 +1,11 @@
 # Airport Simulator Discord bot - HANDOFF
 
 ## RESUME HERE (2026-11-16, s25)
+s26 (11-16 16:30 UTC): "fix discord bot". FOUND: bot is online but still runs OLD code (s23b): cards use the Oct 26
+banners, no Staff board in #stats, no guide in #staff-chat, no #creators-room card. So the GitHub->Railway deploys
+(pushed up to 405725e) never landed: either the Connect Repo step wasn't finished or the builds fail. Code is fine
+(7 test files pass, all 23 cogs import). Next: Kian signs in to Railway (app browser pane or Chrome extension) ->
+check service my-bot Settings > Source + Deployments, fix, redeploy 405725e -> /layout preview -> selftest.
 s25 = built EVERY system in the restructure plan (Kian, s24: "do whatever u wanna do so u can add everything" + "make sure
 new staff know how to use or operate everything"). s24 hit the 5-h limit mid-build; its uncommitted start (points.py,
 config, layout) was picked up. ALL BUILT + COMMITTED (640a031), NOT DEPLOYED. Live = s23b (c83c0053); s24 (banners v2 +
