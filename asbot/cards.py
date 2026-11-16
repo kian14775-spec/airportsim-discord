@@ -14,6 +14,7 @@ Banners are PNGs in assets/banners, sent as attachments with the message (attach
 from __future__ import annotations
 
 
+import asyncio
 import hashlib
 
 import discord
@@ -23,6 +24,7 @@ from .core import log
 from .paths import ROOT
 
 BANNERS = ROOT / "assets" / "banners"
+_card_locks: dict[str, asyncio.Lock] = {}   # one per card: on_ready + a loop rendering at once posted it twice
 
 
 def banner_file(name: str) -> discord.File | None:
@@ -93,6 +95,11 @@ async def post_card(name: str, channel, view: discord.ui.LayoutView, banners: tu
     if channel is None:
         log.warning("card %s: channel missing", name)
         return None
+    async with _card_locks.setdefault(name, asyncio.Lock()):
+        return await _post_card(name, channel, view, banners)
+
+
+async def _post_card(name: str, channel, view: discord.ui.LayoutView, banners: tuple[str, ...]):
     row_ = db.panel(name)
     if row_ and row_["channel_id"] == channel.id:
         try:

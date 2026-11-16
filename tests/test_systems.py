@@ -227,6 +227,30 @@ def test_every_cog_loads_and_registers():
     asyncio.run(run())
 
 
+def test_card_posts_once_when_rendered_twice_at_once():
+    """2026-11-16 live bug: on_ready and the first poll both rendered the creators card -> 2 cards, 2 pins."""
+    from asbot import cards
+    db.run("DELETE FROM panels WHERE name='race_card'")
+    sent = []
+
+    class Chan:
+        id = 77
+
+        async def send(self, **kw):
+            await asyncio.sleep(0.05)          # the gap where the second render slipped in
+            sent.append(kw)
+            return NS(id=900 + len(sent), pinned=False, flags=NS(components_v2=True))
+
+        async def fetch_message(self, mid):
+            return NS(id=mid, flags=NS(components_v2=True), edit=mock.AsyncMock())
+
+    async def run():
+        ch = Chan()
+        await asyncio.gather(*(cards.post_card("race_card", ch, discord.ui.LayoutView()) for _ in range(3)))
+    asyncio.run(run())
+    assert len(sent) == 1, f"posted {len(sent)} cards"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
