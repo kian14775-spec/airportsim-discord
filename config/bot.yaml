@@ -282,7 +282,7 @@ guide:                      # the staff guide (cogs/duty.py): pinned in #staff-c
     body: |
       The bot counts the work you already do, so there's nothing to fill in.
       Every solved ticket, warning, confirmed bug, video or event adds points. Each team has a weekly goal ({targets}).
-      **The board in #stats** shows everyone's week. Full bar = goal reached.
+      **The board in #stats** shows everyone's week. It says **done** when you reach your goal.
       **Monday:** you get a short DM with your week. **Thursday:** a friendly reminder only if you're far from your goal.
       Missing a week is fine. If it happens twice in a row, a lead just checks in with you. The bot never removes anyone by itself.
       Press **My week** in #stats any time to see what counted.
