@@ -105,7 +105,7 @@ def test_board_rows_line_up():
     assert len(rows) == 4 and rows[0].startswith("Ann")                  # most points first
     assert len({len(r) for r in rows}) == 1, rows                         # monospace columns line up
     assert "on a break" in rows[-1] or any("on a break" in r for r in rows)
-    assert all(ord(ch) < 0x2000 for r in rows for ch in r if ch not in "━─")   # no wide emoji
+    assert all(ord(ch) < 0x2000 for r in rows for ch in r)                # plain text: no bars, no wide emoji
 
 
 # ---------------- tickets ----------------
@@ -215,7 +215,7 @@ def test_cards_have_no_side_stripe_and_rules_are_whole():
     assert len(view.children) == 2                               # welcome + (rules -> get started -> menus)
     ids = [getattr(i, "custom_id", None) for i in view.walk_children()]
     assert "asbot:verify:start" in ids and "asbot:welcome:help" in ids
-    assert points.bar(5, 10) == "━━━━━─────" and points.bar(0, 10) == "─" * 10
+    assert not hasattr(points, "bar")                             # Kian: no progress bar on the board
 
 
 # ---------------- bugs ----------------

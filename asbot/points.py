@@ -258,12 +258,6 @@ def label(kind: str) -> str:
     return rule(kind).get("label") or kind.replace("_", " ").capitalize()
 
 
-def bar(pts: int, tgt: int, width: int = 10) -> str:
-    """A thin line that turns thick as the week fills up: ━━━━━─────  (the old █░ blocks looked like noise)."""
-    filled = width if not tgt else min(width, round(width * pts / tgt))
-    return "━" * filled + "─" * (width - filled)
-
-
 def week_lines(user_id: int, week: str) -> list[str]:
     """['3 x Ticket solved: 6', ...] in plain words, biggest first."""
     return [f"{n} x {label(k)}: {p}" for k, n, p in breakdown(user_id, week)]

@@ -85,13 +85,13 @@ def _name(m: discord.Member, width: int = 14) -> str:
 def board_rows(guild: discord.Guild, dept: str, week: str) -> str:
     tot, tgt = points.totals(week), points.target(dept)
     ms = sorted(points.members_of(guild, dept), key=lambda m: (-tot.get(m.id, 0), m.display_name.lower()))
-    rows, right = [], 11 + len(f"{0:>2}/{tgt}")        # the bar + the points column, so every row lines up
+    rows = []          # name + points only (Kian: no bar). Every row is the same width so columns line up.
     for m in ms[:25]:
         pts = tot.get(m.id, 0)
         if points.on_leave(m.id):
-            rows.append(f"{_name(m)} {'on a break':>{right}}")
+            rows.append(f"{_name(m)} {'on a break':>13}")
         else:
-            rows.append(f"{_name(m)} {points.bar(pts, tgt)} {pts:>2}/{tgt}")
+            rows.append(f"{_name(m)} {pts:>3} / {tgt:<3}{'done' if pts >= tgt else '':>4}")
     if len(ms) > 25:
         rows.append(f"... and {len(ms) - 25} more")
     return "```\n" + "\n".join(rows) + "\n```" if rows else "-# Nobody in this team yet."
@@ -207,8 +207,8 @@ def my_week_view(user: discord.abc.User) -> cards.CardView:
     pts = points.totals(wk).get(user.id, 0)
     lines = points.week_lines(user.id, wk)
     left = tgt - pts
-    head = f"**{pts} / {tgt}** · {points.departments()[dept]['name']}\n`{points.bar(pts, tgt, 20)}`\n" + \
-           ("Goal reached. Nice work!" if left <= 0 else f"{left} to go before <t:{_next_monday(wk)}:f>.")
+    head = f"### {pts} / {tgt} points\n{points.departments()[dept]['name']} · " + \
+           ("goal reached, nice work!" if left <= 0 else f"{left} to go before <t:{_next_monday(wk)}:f>.")
     past = db.q("SELECT week, pts, target, status FROM duty_weeks WHERE user_id=? ORDER BY week DESC LIMIT 4", user.id)
     hist = " · ".join(f"W{int(r['week'][-2:])} {r['pts']}/{r['target']} {WORDS.get(r['status'], r['status'])}"
                       for r in past)
