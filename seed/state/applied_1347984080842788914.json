@@ -6,6 +6,10 @@
   "cat:news": {
     "name": "AIRPORT SIMULATOR"
   },
+  "ch:live_count": {
+    "name": "playing-now",
+    "topic": null
+  },
   "ch:announcements": {
     "name": "announcements",
     "topic": "Big news about Airport Simulator."
@@ -64,11 +68,19 @@
   },
   "ch:stats": {
     "name": "stats",
-    "topic": "Live numbers on top, a daily report every day at midnight UTC."
+    "topic": "Staff board (your week, on duty, take a break) + live numbers and the daily report."
   },
-  "ch:logs": {
-    "name": "logs",
-    "topic": null
+  "ch:leads": {
+    "name": "leads",
+    "topic": "Leads only: weekly check-ins, promotions, staff reports."
+  },
+  "ch:mod_room": {
+    "name": "mod-room",
+    "topic": "Moderation team: hand-offs, tricky cases, who's on."
+  },
+  "ch:creators_room": {
+    "name": "creators-room",
+    "topic": "PR team + Star Program creators: videos, posts, events."
   },
   "ch:inbox": {
     "name": "inbox",
@@ -77,5 +89,20 @@
   "ch:applications": {
     "name": "applications",
     "topic": "Every staff application is a post here. Vote, discuss, then accept or deny."
+  },
+  "cat:logs_cat": {
+    "name": "LOGS"
+  },
+  "ch:log_security": {
+    "name": "alerts",
+    "topic": "Needs action: raids, hacked accounts, nukes, bots, webhooks and dangerous permissions."
+  },
+  "ch:log_mod": {
+    "name": "actions",
+    "topic": "What staff did: bans, timeouts, strikes, roles, channels, permissions, closed tickets. Who and why."
+  },
+  "ch:log_messages": {
+    "name": "activity",
+    "topic": "What members did: deleted and edited messages, purges, ghost pings, joins, leaves, boosts."
   }
 }
