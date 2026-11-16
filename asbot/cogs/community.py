@@ -147,9 +147,11 @@ class Community(commands.Cog):
         if upd:
             async for m in upd.history(limit=1):
                 latest = m.jump_url
-        e = embed("An idea you backed just shipped",
-                  f"**{thread.name}** is now in Airport Simulator." + (f"\n[See the update]({latest})" if latest else "")
-                  + f"\n[View the post]({thread.jump_url})")
+        is_bug = "Bug" in {t.name for t in thread.applied_tags}
+        e = embed("A bug you reported or upvoted is fixed" if is_bug else "An idea you backed just shipped",
+                  (f"**{thread.name}** is fixed in today's update. Thanks for helping us find it!" if is_bug else
+                   f"**{thread.name}** is now in Airport Simulator.")
+                  + (f"\n[See the update]({latest})" if latest else "") + f"\n[View the post]({thread.jump_url})")
         sent = 0
         for u in users.values():
             try:

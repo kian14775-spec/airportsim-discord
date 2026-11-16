@@ -24,7 +24,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import db, names, opencloud
+from .. import db, names, opencloud, points
 from ..core import (cfg, channel, embed, guarded, is_staff, linked_roblox, log, log_staff, role, role_named,
                     roblox_group_rank, roblox_headshot, roblox_user, roblox_user_by_name, staff_only)
 from ..renamer import rename_soon
@@ -870,6 +870,8 @@ class Tickets(commands.Cog):
                 await self.helper_note(made.thread, first_text, f"Sent {first_label}")
             except discord.HTTPException as e:
                 log.warning("ticket %s helper note: %s", tid, e)
+        else:
+            await self.ping_on_duty(made.thread, tid)
         await interaction.followup.send(f"Ticket {tid:04d} is open. Check your DMs.", ephemeral=True)
         await log_staff(self.guild, f"Ticket {tid:04d} opened by {user.mention} · {label}"
                                     + (" · Support Agent on it" if helping else ""), kind="Tickets", event="ticket_opened")
@@ -960,6 +962,8 @@ class Tickets(commands.Cog):
                                      f"within ~{eta_minutes()} min. Add anything that helps, like screenshots or "
                                      "where in the game it happens.", what="Handed over")
         await self.refresh(t["id"])
+        if by is None:
+            await self.ping_on_duty(await self.fetch_thread(t["thread_id"]), t["id"])
         why = f"taken over by {by.display_name}" if by else reason
         await log_staff(self.guild, f"Ticket {t['id']:04d}: Support Agent handed over ({why})", kind="Tickets",
                         event="ticket_handover")
@@ -1067,6 +1071,30 @@ class Tickets(commands.Cog):
             v.add_item(SaveFixButton(t["id"]))
         await log_staff(self.guild, f"✅ Ticket {t['id']:04d} · {topic_label(t['topic'])} · <@{t['user_id']}> "
                                     f"{who} · {saved} messages", kind="Tickets", view=v)
+        self.score_close(t)
+
+    def score_close(self, t) -> None:
+        """Staff Duty: 2 points to whoever handled it, only if the member wrote back after the first staff reply
+        (an empty or one-sided ticket scores 0). Deleted tickets never get here."""
+        if not (t["claimed_by"] and t["first_reply"]):
+            return
+        replied = any(discord.utils.snowflake_time(r["src"]).timestamp() > t["first_reply"]
+                      for r in db.q("SELECT src FROM relay_map WHERE ticket_id=? AND side='member'", t["id"]))
+        m = self.guild.get_member(t["claimed_by"]) if self.guild else None
+        if replied and m:
+            points.award(m, "ticket_closed", f"ticket:{t['id']}")
+
+    async def ping_on_duty(self, thread, tid: int) -> None:
+        """A ticket that needs a person pings whoever pressed Go on duty (nobody else). The 30-minute nudge
+        still follows when nobody answers."""
+        on = points.on_duty_ids()
+        if thread is None or not on:
+            return
+        try:
+            await thread.send(f"On duty: {' '.join(f'<@{u}>' for u in on[:10])}, ticket {tid:04d} needs a person.",
+                              allowed_mentions=discord.AllowedMentions(users=True))
+        except discord.HTTPException as e:
+            log.warning("ticket %s duty ping: %s", tid, e)
 
     ticket_group = app_commands.Group(name="ticket", description="Tickets (staff)",
                                       default_permissions=discord.Permissions(moderate_members=True))
@@ -1166,6 +1194,9 @@ class Tickets(commands.Cog):
         if content:
             db.kv_set(f"tlast:{t['id']}", content[:1200])   # pre-fills "Save fix as answer"
         now = db.now()
+        fresh = ticket(t["id"])
+        if fresh and fresh["first_reply"] is None and now - (fresh["handed"] or fresh["created"]) <= 15 * 60:
+            points.award(author, "fast_reply", f"fast:{t['id']}")
         db.run("UPDATE tickets SET status='waiting', last_activity=?, first_reply=COALESCE(first_reply, ?), "
                "claimed_by=COALESCE(claimed_by, ?) WHERE id=?", now, now, author.id, t["id"])
         await self.refresh(t["id"])
@@ -1226,9 +1257,11 @@ class Tickets(commands.Cog):
                       "AND nudged=0 AND COALESCE(handed, created)<?", now - NUDGE_AFTER):
             thread = await self.fetch_thread(t["thread_id"])
             try:
+                on = [f"<@{u}>" for u in points.on_duty_ids()]
+                who = " ".join(on) if on else (team.mention if team else "Support team")
                 if thread:
-                    await thread.send(f"⏰ No reply for 30 minutes. {team.mention if team else 'Support team'}, "
-                                      "can someone take this?", allowed_mentions=discord.AllowedMentions(roles=True))
+                    await thread.send(f"⏰ No reply for 30 minutes. {who}, can someone take this?",
+                                      allowed_mentions=discord.AllowedMentions(roles=True, users=True))
             except discord.HTTPException as e:   # one locked post must not hold up the rest
                 log.warning("ticket %s nudge: %s", t["id"], e)
             db.run("UPDATE tickets SET nudged=1 WHERE id=?", t["id"])

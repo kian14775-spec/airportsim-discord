@@ -15,6 +15,7 @@ Python 3.12 + discord.py, runs 24/7 on Railway (free plan, volume at /data).
 | `asbot/paths.py` | Where data lives (`DATA`, layout `STATE`) + the boot-time seed merge |
 | `asbot/db.py` | SQLite on the volume (links, tickets, panels, applications...) |
 | `asbot/panels.py` | Bot-owned messages that are posted once and edited in place |
+| `asbot/points.py` | Staff Duty ledger: `award(member, kind, ref)` (idempotent, daily/weekly caps), ISO weeks, departments, breaks, on duty |
 | `asbot/transcripts.py` | Closed-ticket history + the private viewer |
 | `asbot/ticketlist.py` | The paged ticket browser (Open / Closed tabs) |
 | `asbot/faq.py`, `asbot/ai.py` | Instant answers; optional free-tier Gemini wording polish (off without a key) |
@@ -48,11 +49,18 @@ Python 3.12 + discord.py, runs 24/7 on Railway (free plan, volume at /data).
 | `modlog.py` | Logs -> #activity: messages (7-day text store, image copies, who deleted), one-line joins and leaves, boosts; names and voice only go on the timeline |
 | `auditlog.py` | Audit log entries (staff action + who + reason) -> #actions, or #alerts when dangerous |
 | `guard.py` | Anti-spam, fake links, hacked accounts, staff-ping nudges, raid lockdown (/lockdown), anti-nuke, setup check, live status card in #alerts |
+| `duty.py` | Staff Duty: board in #stats (My week, Go on/off duty, Take a break), Monday close (DMs, #leads report, check-in + promotion cards with lead buttons), Thursday nudge, points from the audit log + public chat, 30-day staff report, Staff guide card in #staff-chat + team welcome DMs |
+| `bugs.py` | Bug -> fix loop: QA card on Bug posts (reproduce / can't / duplicate / fixed next update), Confirmed + Fixed tags, game update -> Done + DMs, QA points |
+| `pulse.py` | "Playing now" counter channel, one verify-reminder DM, question of the day, shot of the week, poll reminder, boost thank-you |
+| `events.py` | Plan an event: Discord event + cover, #announcements post, #general reminder, auto start/end, #media recap, host points |
+| `creators.py` | #creators-room card; YouTube RSS (no key) -> new game videos in #socials with credit + PR points; monthly top creators |
 | `admin.py` | /layout preview / apply (admins) |
 | `health.py` | Watchdog restart, error replies |
 
 ## Commands
 Members: `/help`, `/suggest`, `/bug`, `/rp create`, `/profile`.
+Team buttons (no commands needed, so PR/QA without Timeout members can use them): the Staff board in #stats,
+the Staff guide in #staff-chat, the #creators-room card, QA buttons on bug posts, lead buttons in #leads.
 Staff (hidden from members, need the "Timeout members" permission or an Integrations override):
 `/staff`, `/ticket view|history|search|reply|close|stats|list`, `/answer ...`, `/lockdown`, `/template_add`,
 `?` commands, right-click Warn / Profile. Admins: `/layout`.
@@ -103,6 +111,18 @@ on Railway: it must say "Server already matches the layout."
 Seed rules on boot (`paths.seed_once`): a fresh volume gets all of `seed/`; otherwise `applied_*` is copied
 only when the volume has none, ids keys are added only when new in the seed (`seeded_<guild>.json` remembers
 what was offered, so a key the volume dropped is not brought back), and nothing on the volume is overwritten.
+
+## Staff Duty and friends (2026-11-16)
+- Points: features call `points.award(member, kind, ref)`; `ref` makes it count once, rules/caps/targets are
+  `duty:` in config/bot.yaml. Only members of a department (`duty.departments`) score. Board refreshes ~2 min after
+  any change (`points.dirty`), else hourly.
+- Weeks are ISO weeks from Monday 00:00 UTC. The first (partial) week after the first boot is a warm-up and is
+  never closed (`duty:start_week`). `duty:closed` = last closed week; the Monday loop sets it before the DMs.
+- The bot never demotes/promotes on its own: #leads cards with buttons; leads = `duty.leads` role keys or admins.
+- Hooks: tickets.py (solved = member wrote after the first staff reply; first reply <= 15 min), strikes.py (warn),
+  duty.py (audit log ban/kick/timeout with a reason, timeout undone < 1 h = revoked; 5+ messages a day in
+  `duty.chat_channels`), bugs.py, events.py, creators.py. news.py dispatches `game_updated` when Roblox's `updated` changes.
+- Texts new staff read are `guide:` in config/bot.yaml (pages for the guide card, How this works, welcome DMs).
 
 ## Rules for new code
 - Messages: `ui.card(...)` (or `core.embed`) only, never raw colours.

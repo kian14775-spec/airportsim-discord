@@ -23,7 +23,7 @@ import discord
 from discord.ext import commands
 
 from .. import timeline
-from ..core import log_card, log_off, log_staff
+from ..core import channel, log_card, log_off, log_staff
 
 A = discord.AuditLogAction
 DANGER = ("administrator", "manage_guild", "manage_roles", "manage_channels", "manage_webhooks",
@@ -294,7 +294,9 @@ class AuditLog(commands.Cog):
         own = entry.user_id == self.bot.user.id
         name = getattr(entry.changes.before, "name", None) or getattr(entry.changes.after, "name", None) \
             or getattr(entry.target, "name", "")
-        if own and (entry.action not in OWN_KEEP or "lounge" in str(name).lower()):
+        counter = channel(entry.guild, "live_count")   # "Playing now: 1,234" is renamed every 10 min
+        if own and (entry.action not in OWN_KEEP or "lounge" in str(name).lower()
+                    or (counter and getattr(entry.target, "id", None) == counter.id)):
             return
         kind, title, body, user = describe(entry)
         target_id = getattr(entry.target, "id", None)

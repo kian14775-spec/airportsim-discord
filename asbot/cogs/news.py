@@ -120,6 +120,12 @@ class News(commands.Cog):
         bits = [f"Game: **{name}**"]
         if self.players is not None:
             bits.append(f"{self.players:,} playing")
+        from .. import points
+        from .tickets import eta_minutes
+        on = len(points.on_duty_ids())
+        if on:
+            bits.append(f"{on} staff on duty")
+        bits.append(f"usual reply ~{eta_minutes()} min")
         bits.append(f"next update: {s.get('next_update') or 'not announced'}")
         body = "  ·  ".join(bits)
         if s["issues"]:
@@ -155,6 +161,13 @@ class News(commands.Cog):
             return
         if g:
             self.players = g.get("playing")
+            upd = g.get("updated")      # changes when the game is updated: the bug loop closes fixed bugs
+            if upd:
+                old = db.kv_get("game:updated")
+                if old != upd:
+                    db.kv_set("game:updated", upd)
+                    if old is not None:
+                        self.bot.dispatch("game_updated", old, upd)
             day = f"peak:{discord.utils.utcnow():%Y-%m-%d}"   # for the daily stats report
             if self.players and self.players > db.kv_get(day, 0):
                 db.kv_set(day, self.players)

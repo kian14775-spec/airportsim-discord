@@ -18,11 +18,15 @@ roles:  # top to bottom. Existing roles are only referenced (name only = the bot
   - {key: founder,      name: Founder}
   - {key: owner,        name: Owner}
   - {key: co_owner,     name: Co Owner}
+  - {key: admin,        name: Admin, external: true}
   - {key: board,        name: Airport Board}
   - {key: developer,    name: Developer}
   - {key: moderator,    name: Server Moderator}
   - {key: trial_mod,    name: Trial Moderator}
   - {key: support_team, name: Support Team}
+  - {key: pr_team,      name: Public Relations Team, was: [PR Team], external: true}   # departments (config/bot.yaml duty:)
+  - {key: qa,           name: Quality Assurance, was: [QA], external: true}
+  - {key: star_program, name: Star Program, external: true}   # creators, not staff
   # (live order 2026-10-26: Admin sits under Co Owner; teams + perks sit here, between staff and Traveler)
   - {key: livery_winner,      name: Livery of the Month, color: "#F1C40F"}
   - {key: verified,     name: Traveler}          # given on verify (Bloxlink or the bot)
@@ -30,14 +34,16 @@ roles:  # top to bottom. Existing roles are only referenced (name only = the bot
   - {key: plat_mobile,  name: Mobile}
   - {key: plat_console, name: Console}
   - {key: plat_vr,      name: VR}
-  - {key: ping_announcements, name: "| Announcements |"}
-  - {key: ping_devlogs,       name: "| Development |"}
-  - {key: ping_socials,       name: "| Social Media |"}
-  - {key: ping_polls,         name: "| Polls |"}
+  - {key: ping_announcements, name: Announcements, was: ["| Announcements |"]}   # renamed by hand 2026-11 (plain names)
+  - {key: ping_devlogs,       name: Development,   was: ["| Development |"]}
+  - {key: ping_socials,       name: Social Media,  was: ["| Social Media |"]}
+  - {key: ping_polls,         name: Polls,         was: ["| Polls |"]}
 
 # Role groups usable in presets like a single role.
 groups:
   staff: [founder, owner, co_owner, board, developer, moderator, trial_mod, support_team]
+  team:  [founder, owner, co_owner, board, developer, moderator, trial_mod, support_team, pr_team, qa]   # every department
+  leads: [founder, owner, co_owner, admin, board]
 
 categories:
   - key: top
@@ -54,6 +60,7 @@ categories:
     was: [STAY TUNED]
     perms: readonly
     channels:
+      - {key: live_count, name: playing-now, type: voice, perms: stat}   # the bot renames it: "Playing now: 1,234"
       - {key: announcements, name: announcements, was: [announcements, news], type: announcement, topic: "Big news about Airport Simulator."}
       - {key: devlogs, name: dev-logs, was: [dev-logs], type: announcement, topic: "Changelogs, polls and sneak peeks."}
       - {key: socials, name: socials, was: [socials], type: announcement, topic: "Our latest posts on social media."}
@@ -70,15 +77,28 @@ categories:
         perms: forum
         require_tag: true
         topic: Ideas, bugs and UI suggestions. Vote on the ones you like.
-        tags: [Suggestion, Bug, UI, New*, Under review*, Planned*, Done*]   # * = only staff can set
+        tags: [Suggestion, Bug, UI, New*, Under review*, Confirmed*, Planned*, Fixed*, Done*]   # Confirmed = QA reproduced it, Fixed = in the next update   # * = only staff can set
 
   - key: community
     name: ENGAGE
     was: [TALK]
     perms: members
     channels:
-      - {key: chat,  name: general, was: [general, chat], slowmode: 3}
-      - {key: media, name: media, was: [media, screenshots], topic: "Screenshots and clips from the game"}
+      # perms_extra = staff's hand-made member perms (no images in general, no reactions/polls/threads), kept on apply
+      - key: chat
+        name: general
+        was: [general, chat]
+        slowmode: 3
+        perms_extra:
+          verified: {allow: [create_instant_invite, send_tts_messages, use_external_emojis, use_application_commands, use_external_stickers, send_messages_in_threads, send_voice_messages],
+                     deny: [attach_files, manage_channels, add_reactions, manage_messages, mention_everyone, manage_roles, manage_webhooks, manage_threads, create_public_threads, create_private_threads, use_embedded_activities, send_polls, use_external_apps, pin_messages, bypass_slowmode]}
+      - key: media
+        name: media
+        was: [media, screenshots]
+        topic: "Screenshots and clips from the game"
+        perms_extra:
+          verified: {allow: [create_instant_invite, send_tts_messages, use_external_emojis, use_application_commands, use_external_stickers, send_messages_in_threads, send_voice_messages],
+                     deny: [manage_channels, add_reactions, manage_messages, mention_everyone, manage_roles, manage_webhooks, manage_threads, create_public_threads, create_private_threads, use_embedded_activities, send_polls, use_external_apps, pin_messages, bypass_slowmode]}
       - {key: create_party, name: lounge, was: [lounge, Create Party], type: voice, perms: voice}
 
   - key: hangar
@@ -106,8 +126,11 @@ categories:
     was: [APPLICATION SUBMISSIONS]
     perms: staff
     channels:
-      - {key: staff_chat,   name: staff-chat, was: [staff-chat, moderator-only]}
-      - {key: stats, name: stats, was: [stats], topic: "Live numbers on top, a daily report every day at midnight UTC."}
+      - {key: staff_chat,   name: staff-chat, was: [staff-chat, moderator-only], perms: team}
+      - {key: stats, name: stats, was: [stats], perms: team, topic: "Staff board (your week, on duty, take a break) + live numbers and the daily report."}
+      - {key: leads, name: leads, perms: leads, topic: "Leads only: weekly check-ins, promotions, staff reports."}
+      - {key: mod_room, name: mod-room, perms: mod_room, topic: "Moderation team: hand-offs, tricky cases, who's on."}
+      - {key: creators_room, name: creators-room, perms: creators, topic: "PR team + Star Program creators: videos, posts, events."}
       - key: inbox
         name: inbox
         was: [inbox]
@@ -153,6 +176,27 @@ presets:
     "@everyone": {deny: [view_channel]}
     staff:       {allow: [view_channel, read_message_history],
                   deny: [send_messages, send_messages_in_threads, create_public_threads, create_private_threads, add_reactions]}
+  stat:             # a locked voice channel used as a live counter
+    "@everyone": {deny: [view_channel, connect]}
+    verified:    {allow: [view_channel], deny: [connect]}
+    staff:       {allow: [view_channel], deny: [connect]}
+  team:             # every department (staff + PR + QA)
+    "@everyone": {deny: [view_channel]}
+    team:        {allow: [view_channel, send_messages, send_messages_in_threads, read_message_history]}
+  leads:
+    "@everyone": {deny: [view_channel]}
+    leads:       {allow: [view_channel, send_messages, send_messages_in_threads, read_message_history]}
+  mod_room:
+    "@everyone": {deny: [view_channel]}
+    leads:       {allow: [view_channel, send_messages, read_message_history]}
+    moderator:   {allow: [view_channel, send_messages, read_message_history]}
+    trial_mod:   {allow: [view_channel, send_messages, read_message_history]}
+    support_team: {allow: [view_channel, send_messages, read_message_history]}
+  creators:
+    "@everyone": {deny: [view_channel]}
+    leads:       {allow: [view_channel, send_messages, read_message_history]}
+    pr_team:     {allow: [view_channel, send_messages, read_message_history, attach_files, embed_links]}
+    star_program: {allow: [view_channel, send_messages, read_message_history, attach_files, embed_links]}
   staff:            # staff only
     "@everyone": {deny: [view_channel]}
     staff:       {allow: [view_channel, send_messages, send_messages_in_threads, read_message_history]}

@@ -77,8 +77,13 @@ def sync(layout, snap, state, **kw):
     return run(execute(p, layout, FakeBackend(snap), state, log=lambda _: None))
 
 
+EXTERNAL = {ADMIN: "Admin", 5002: "Public Relations Team", 5003: "Quality Assurance", 5004: "Star Program"}   # external roles
+
+
 def empty():
-    return Snapshot(everyone_id=EVERYONE, roles={EVERYONE: RoleSnap(EVERYONE, "@everyone")}, channels={})
+    """A server with no layout yet, but with the roles the yaml marks external (those are never made)."""
+    roles = {EVERYONE: RoleSnap(EVERYONE, "@everyone")} | {i: RoleSnap(i, n) for i, n in EXTERNAL.items()}
+    return Snapshot(everyone_id=EVERYONE, roles=roles, channels={})
 
 
 def test_layout_parses():
@@ -192,7 +197,8 @@ def test_unlisted_overwrites_are_not_drift():
 def test_unlisted_overwrites_survive_an_apply():
     lay, snap, state, general, media, devlogs = hand_made_server()
     traveler = state["role:verified"]
-    general.overwrites[traveler] = (general.overwrites[traveler][0] | bits("mention_everyone"), 0)   # drift
+    allow, deny = general.overwrites[traveler]
+    general.overwrites[traveler] = (allow | bits("manage_events"), deny)                         # drift
     media.overwrites[traveler] = (0, 0)                                                            # drift
     devlogs.overwrites[EVERYONE] = (0, 0)                                                          # drift
     lay2 = copy.deepcopy(lay)
@@ -201,7 +207,7 @@ def test_unlisted_overwrites_survive_an_apply():
     texts = {a.key: a for a in p.changes}
     assert set(texts) == {"chat", "media", "devlogs", "stats"}, [a.text for a in p.changes]
     assert texts["chat"].text == "~ #general: perms (@Traveler)"
-    assert texts["chat"].details[0] == "@Traveler: allow -mention_everyone"
+    assert texts["chat"].details[0] == "@Traveler: allow -manage_events"
     assert texts["chat"].details[-1] == "left as they are: @Server Booster"
     assert texts["media"].details[-1] == "left as they are: @Server Booster, @Admin"
     assert texts["devlogs"].details[-1] == f"left as they are: member {USER}"

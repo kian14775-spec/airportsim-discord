@@ -151,3 +151,185 @@ logs:
     - scheduled_event_create
     - scheduled_event_update
     - scheduled_event_delete
+
+# ============================================================ 2026-11-16 systems (ARCHITECTURE.md > Staff Duty and friends)
+duty:                       # Staff Duty: points for real work, weekly board, check-ins (asbot/points.py + cogs/duty.py)
+  enabled: true
+  week_report: "mon 00:00"  # UTC; the board refreshes hourly, the week closes Monday 00:00
+  nudge_day: thu            # a friendly mid-week reminder for anyone under nudge_below of target
+  nudge_below: 0.4
+  review_after_red: 2       # red weeks in a row before leads get a check-in card (the bot never demotes by itself)
+  promote_after_green: 4    # green weeks in a row as Trial before leads get a promotion card
+  duty_hours: 2             # "Go on duty" lasts this long unless extended
+  leads: [founder, owner, co_owner, admin, board]   # role keys that see #leads and can use lead buttons
+  chat_channels: [chat, media]   # layout keys where an active day (5+ messages) counts as chat work
+  departments:              # order = priority when someone has roles in two
+    mod:
+      name: Moderation
+      about: Keep chat friendly and safe, and answer support tickets.
+      roles: [moderator, trial_mod, support_team]
+      trial: trial_mod
+      member: moderator
+      target: 12
+    qa:
+      name: QA
+      about: Find and confirm bugs so the devs can fix them fast.
+      roles: [qa]
+      trial: null
+      member: qa
+      target: 10
+    pr:
+      name: PR and creators
+      about: Make videos, posts and events that bring players in.
+      roles: [pr_team]          # Star Program creators get the room + video posts, not targets
+      trial: null
+      member: pr_team
+      target: 10
+  rules:                    # kind: points, caps and the words staff see
+    ticket_closed:  {pts: 2, label: Ticket solved}
+    fast_reply:     {pts: 1, label: Replied within 15 min}
+    mod_action:     {pts: 1, day_cap: 5, label: Moderation action with a reason}
+    warn:           {pts: 1, day_cap: 5, label: Warning given}
+    chat_day:       {pts: 1, week_cap: 5, label: Active day in public chat}
+    bug_confirmed:  {pts: 2, day_cap: 10, label: Bug checked and confirmed}
+    bug_fixed:      {pts: 3, label: A bug you confirmed got fixed}
+    test_session:   {pts: 4, label: Joined a test session}
+    video:          {pts: 6, label: Video or short posted}
+    social_post:    {pts: 2, week_cap: 6, label: Post shared in socials}
+    event_hosted:   {pts: 6, label: Event hosted}
+    manual:         {pts: 0, label: Credit from a lead}
+
+pulse:                      # keeping the server alive (cogs/pulse.py)
+  live_count: true          # channel name "Playing now: 1,234" (key live_count), renamed at most every 10 min
+  verify_nudge_hours: 24    # one friendly DM to members who haven't verified after this long (never twice)
+  verify_nudge_per_run: 4   # at most this many every 10 min (older unverified members are reached slowly)
+  topic_hour: 18            # UTC hour for the daily question in #general (skipped if chat was busy in the last 30 min)
+  shot_of_week: true        # most-liked image in #media each Sunday, credited in #socials
+  shot_channel: socials
+  poll_reminder: true       # reminds staff on Wednesday if no poll went out that week
+  topics:
+    - Which airport should come to Airport Simulator next?
+    - What's the best livery you've seen in the game?
+    - Window seat or aisle seat?
+    - What's the first thing you do when you join a server?
+    - Which job do you play the most, and why?
+    - What's the longest flight you've ever taken in real life?
+    - If you could add one vehicle to the airport, what would it be?
+    - What's your dream airline to work for?
+    - Night shifts or day shifts at the airport?
+    - Which plane do you think looks the best on approach?
+    - What's one small feature that would make your day better in game?
+    - Share your best tip for new players.
+    - What got you into aviation?
+    - Busiest airport you've ever been to?
+    - Which airline has the best food (real life)?
+    - What's the funniest thing that happened to you in game?
+    - If you ran a real airport, what would you change first?
+    - Favourite aircraft engine sound?
+    - Which country would you love to fly to next?
+    - Best time of day for screenshots?
+    - What would make a perfect airport event?
+    - Do you prefer small regional airports or huge hubs?
+    - Ground crew, ATC or pilot: which job is the hardest?
+    - What's a livery you wish existed?
+    - What should the next update focus on?
+    - First flight you ever took, where to?
+    - Which airport has the best view on landing?
+    - What's one thing every airport should have?
+    - If you could rename the game, what would you call it?
+    - Biggest plane you've seen in person?
+
+events:                     # /event engine (cogs/events.py)
+  remind_before_min: 60
+  recap_channel: media      # layout key: after the event, a "share your screenshots" post goes here
+  announce_channel: announcements
+  min_interested_for_points: 3
+  banner: welcome          # assets/banners/<name>.png becomes the Discord event cover
+  location: Airport Simulator on Roblox
+  announce_ping: null      # e.g. ping_announcements to ping that role when an event is posted
+  hosts: [pr, mod]         # departments that may plan events (leads and staff always can)
+
+creators:                   # creator pipeline (cogs/creators.py)
+  poll_minutes: 30
+  keywords: [airport simulator, airport sim]
+  post_channel: socials
+
+bugs:                       # bug -> fix loop (cogs/bugs.py)
+  forum: feedback           # layout key of ideas-and-bugs
+  bug_tag: Bug
+  confirmed_tag: Confirmed
+  fixed_tag: Fixed
+  done_tag: Done
+  qa_roles: [qa, developer, moderator, trial_mod]   # who may press the QA buttons
+  fix_roles: [developer]                            # who may press "Fixed next update" (leads always can)
+
+guide:                      # the staff guide (cogs/duty.py): pinned in #staff-chat, "How this works" buttons, welcome DMs.
+                            # Plain, friendly words: a brand-new staff member should get it on the first read.
+  start:
+    title: Welcome to the team
+    body: |
+      Thanks for helping run Airport Simulator. Here's everything in two minutes.
+      **What we do:** keep chat friendly, help players in tickets, find bugs and bring new players in.
+      **Where things are:** #staff-chat to talk, #stats for your week and the live numbers, #inbox for tickets.
+      **Your first three steps:**
+      1. Read the page for your team in this menu.
+      2. Press **Go on duty** in #stats when you have time to help. Press **Go off duty** when you stop.
+      3. Ask anything in #staff-chat. Nobody expects you to know it all on day one.
+  duty:
+    title: Your week (Staff Duty)
+    body: |
+      The bot counts the work you already do, so there's nothing to fill in.
+      Every solved ticket, warning, confirmed bug, video or event adds points. Each team has a weekly goal ({targets}).
+      **The board in #stats** shows everyone's week. Full bar = goal reached.
+      **Monday:** you get a short DM with your week. **Thursday:** a friendly reminder only if you're far from your goal.
+      Missing a week is fine. If it happens twice in a row, a lead just checks in with you. The bot never removes anyone by itself.
+      Press **My week** in #stats any time to see what counted.
+  breaks:
+    title: On duty and breaks
+    body: |
+      **Go on duty** = "I can take tickets now". New tickets ping the people on duty first, so everyone else gets fewer pings. It switches off by itself after 2 hours.
+      **Take a break** = exams, holiday, busy week. Pick how many days; your week isn't counted and the board shows "on break". It ends by itself, or press **End my break** under **My week**.
+      Tell your lead if you'll be away for longer than a month.
+  tickets:
+    title: Tickets
+    body: |
+      Players DM the bot, and each ticket becomes a post in #inbox.
+      The **Support Agent** answers simple ones first. When a person is needed, the post pings the people on duty.
+      **To help:** press **Claim**, then just type in the post. Your message goes to the player's DMs.
+      **When it's solved:** **Ask to close** (they confirm) or **Close now**. Found a fix others will need? **Save fix as answer**.
+      Spam or troll ticket? Type `?delete`. Need a developer? Press **Send to dev team**.
+      Points: a solved ticket where the player replied = 2, first reply within 15 minutes = +1.
+  commands:
+    title: Quick commands
+    body: |
+      Type these in a ticket post or a staff channel. `?help` shows the full list.
+      `?claim` `?close` `?ask` `?delete` `?urgent` `?dev` `?r <name>` (saved reply) `?history` `?tickets` `?t <number>`
+      **/staff** opens the staff panel: announcements, game status, warn, member lookup, today's numbers and more.
+      Everything there only shows to you.
+  moderation:
+    title: Keeping chat friendly
+    body: |
+      Start soft: a kind word in chat fixes most things.
+      **Warn:** right-click a member or a message > **Apps** > **Warn**, and write the reason the member will read.
+      Warnings add up by themselves: 1 = a DM, 2 = 1 hour timeout, 3 = 24 hours, 4 = 7 days and a ban is suggested. They expire after 30 days.
+      Always give a reason. Actions with a reason count for your week (up to 5 a day). A timeout you undo within an hour doesn't count.
+  qa:
+    title: QA and bugs
+    body: |
+      Every post tagged **Bug** in #ideas-and-bugs gets a small QA card.
+      Test it in game, then press **I can reproduce** or **Can't reproduce**. Already reported? **Duplicate** and paste the link.
+      The first confirm adds the **Confirmed** tag and tells the reporter. Devs press **Fixed next update**.
+      When the game updates, the bot marks fixed bugs **Done** and tells everyone who reported or upvoted them. Your confirmed bugs give you points again when they're fixed.
+  pr:
+    title: PR, creators and events
+    body: |
+      **Videos:** press **Link my YouTube** in #creators-room. New Airport Simulator videos are shared in #socials with your name, by themselves.
+      **Events:** press **Plan an event**. The bot makes the Discord event, posts it, reminds people an hour before, and asks for screenshots afterwards.
+      Points: a video = 6, an event with at least 3 people interested = 6.
+  leads:
+    title: For leads
+    body: |
+      #leads gets the weekly report every Monday, plus a card when someone needs a check-in (2 quiet weeks in a row) or looks ready for promotion (4 strong weeks as Trial).
+      Every card has buttons, and the bot only does what you press. Each press is logged in #actions.
+      **Give points** (in /staff > Staff Duty) adds credit for work the bot can't see, like helping in voice or running a test session.
+      **Staff report** shows the last 30 days per person: tickets, actions, warnings and when they last talked.

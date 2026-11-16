@@ -13,7 +13,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import db, timeline, ui
+from .. import db, points, timeline, ui
 from ..core import channel, is_staff, log_staff
 
 db.conn().executescript("""
@@ -44,8 +44,9 @@ async def give_strike(interaction: discord.Interaction, member: discord.Member, 
     if member.bot or is_staff(member):
         return await interaction.response.send_message("You can't strike bots or staff.", ephemeral=True)
     await interaction.response.defer(ephemeral=True)   # first: a slow timeout + DM must not look like a failure (= a 2nd strike)
-    db.run("INSERT INTO strikes(user_id, reason, by_id, created) VALUES(?, ?, ?, ?)",
-           member.id, reason, interaction.user.id, db.now())
+    sid = db.run("INSERT INTO strikes(user_id, reason, by_id, created) VALUES(?, ?, ?, ?)",
+                 member.id, reason, interaction.user.id, db.now())
+    points.award(interaction.user, "warn", f"strike:{sid}", note=reason[:80])   # Staff Duty (daily cap in the config)
     n = len(active(member.id))
     timeout = STEPS.get(n, MAX_STEP)
     note = ""

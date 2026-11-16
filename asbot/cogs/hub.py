@@ -113,11 +113,14 @@ class TemplatePick(discord.ui.Select):
 
 
 # ---------------- staff: /staff ----------------
-ACTIONS = [("tickets", "Tickets", "Browse open and closed tickets, read transcripts"),
+ACTIONS = [("duty", "Staff Duty", "Your week, and for leads: give points, 30-day staff report"),
+           ("tickets", "Tickets", "Browse open and closed tickets, read transcripts"),
            ("announce", "Post an announcement", "announcements, dev-logs or socials"),
            ("status", "Game status", "All good, issues, down, maintenance"),
            ("issues", "Known issues and next update", "What shows on the support card"),
            ("contest", "Livery of the Month", "Start, end or refresh the board"),
+           ("event", "Plan an event", "Discord event, post, reminder and recap, all automatic"),
+           ("guide", "Staff guide", "How everything works, in plain words"),
            ("member", "Look up a member", "Roblox link, tickets, strikes, timeline"),
            ("warn", "Warn a member", "Give a strike; timeouts happen by themselves"),
            ("answers", "Instant answers", "Add, see and remove the helper's answers"),
@@ -136,6 +139,15 @@ class StaffMenu(discord.ui.Select):
         if act == "tickets":
             from .. import ticketlist
             return await ticketlist.send(interaction)
+        if act == "duty":
+            from .duty import staff_panel
+            return await interaction.response.send_message(view=staff_panel(interaction.user), ephemeral=True)
+        if act == "event":
+            from .events import PlanModal
+            return await interaction.response.send_modal(PlanModal())
+        if act == "guide":
+            from .duty import page_view
+            return await interaction.response.send_message(view=page_view("start"), ephemeral=True)
         if act == "announce":
             return await interaction.response.send_message("Where, and who gets pinged?",
                                                            view=AnnounceSetup(), ephemeral=True)

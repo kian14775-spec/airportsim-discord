@@ -1,6 +1,15 @@
 # Airport Simulator Discord: restructure plan (2026-11-16)
 
-PROPOSAL ONLY. Nothing here is built yet. The pick list is at the bottom.
+BUILD STATUS (2026-11-16, Kian: "add everything"): BUILT + offline-tested, NOT deployed.
+- Built: 1 staff baseline report (posted once in #leads, and /staff > Staff Duty), 2 Staff Duty v1, 3 departments
+  (STAFF rooms: #leads, #mod-room, #creators-room; Support Team folded into Moderation by config, no roles deleted),
+  4 verify nudge, 5 live player count + question of the day + poll reminder + shot of the week + boost card,
+  6 on-duty ticket routing, 7 bug-to-fix loop (main server), 8 event engine, 9 creator pipeline.
+- Not built: QA hub bridge (needs the bot invited to the QA hub), 10 in-game perks (Open Cloud key),
+  11 Frequent Flyer tiers, 12 Trello push, native onboarding (a Discord setting, Kian's call), staff website (not recommended).
+- Department ladders use the roles that exist (Trial Moderator -> Server Moderator; QA + PR have no Trial role yet).
+
+The original proposal follows.
 Hard rule for everything below: $0. It all runs inside the bot that already lives on Railway (no new service, no paid API, no AI).
 
 ---

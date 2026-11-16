@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parent
 COGS = ["asbot.cogs.admin", "asbot.cogs.health", "asbot.cogs.verify", "asbot.cogs.tickets",
         "asbot.cogs.staffapps", "asbot.cogs.news", "asbot.cogs.community", "asbot.cogs.forums",
         "asbot.cogs.hub", "asbot.cogs.stats", "asbot.cogs.strikes",
-        "asbot.cogs.modlog", "asbot.cogs.auditlog", "asbot.cogs.guard", "asbot.cogs.radar", "asbot.cogs.answers", "asbot.cogs.staffcmds", "asbot.cogs.profile"]
+        "asbot.cogs.modlog", "asbot.cogs.auditlog", "asbot.cogs.guard", "asbot.cogs.radar", "asbot.cogs.answers", "asbot.cogs.staffcmds", "asbot.cogs.profile",
+        "asbot.cogs.duty", "asbot.cogs.bugs", "asbot.cogs.pulse", "asbot.cogs.events", "asbot.cogs.creators"]
 
 
 def setup_logging() -> None:

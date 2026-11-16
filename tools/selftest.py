@@ -96,6 +96,25 @@ async def run(client: discord.Client):
     if unverified:
         check(unverified < me, "bot can remove @Unverified" + ("" if unverified < me else " -> MOVE THE BOT'S ROLE"))
 
+    # 2026-11-16 systems: Staff Duty rooms, the live counter, events, promotions (need /layout apply after deploy)
+    for key in ("leads", "mod_room", "creators_room", "live_count"):
+        c = ch(key)
+        check(c is not None, f"#{key} exists" + ("" if c else " -> run /layout preview + apply"))
+        if c is None:
+            continue
+        if key == "live_count":
+            p = perms_for(c, [traveler])
+            check(p.view_channel and not p.connect, "members see the player counter but can't join it")
+        else:
+            check(not perms_for(c, [traveler]).view_channel, f"#{c.name} is hidden from members")
+    gp = g.me.guild_permissions
+    check(gp.administrator or gp.manage_events, "bot can make Discord events (Manage Events)")
+    check(gp.administrator or gp.view_audit_log, "bot can read the audit log (Staff Duty actions)")
+    for key in ("moderator", "trial_mod", "support_team", "qa", "pr_team"):
+        r = g.get_role(state.get(f"role:{key}") or 0)
+        if r:
+            check(r < me, f"bot can promote/demote @{r.name}" + ("" if r < me else " -> MOVE THE BOT'S ROLE ABOVE IT"))
+
     for key in ("welcome", "support", "stats"):
         found = None
         async for m in ch(key).history(limit=25):
