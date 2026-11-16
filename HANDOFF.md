@@ -46,9 +46,13 @@ Next:
    M16-M18, M20, M22-M24, template_add disk check.
 
 ## Deploying (Railway)
-- Code change: `railway up --detach` from the repo (CLI login lives in the real user profile; from Claude's
-  tools run railway with the sandbox disabled, or in a terminal tab).
-- Logs: `railway logs --lines 50`. Status: `railway service status`.
+- Code change: commit, then `git push` (master). Since 2026-11-16 the Railway service deploys from the private GitHub
+  repo kian14775-spec/airportsim-discord (branch master): every push = a new deploy. Push from the terminal tab
+  (git's GitHub login is saved via Git Credential Manager). The Railway CLI (`railway up`) is blocked on this PC by
+  Windows Smart App Control (unsigned railway.exe), and the CLI login expired 11-05.
+- GitHub deploys ignore .railwayignore (that file is for CLI uploads only); tools/tests/docs ship but never run.
+- Logs/status: Railway dashboard in Kian's Chrome (the browser pane isn't signed in to Railway). From here: check the
+  bot's own cards in Discord, `python tools/selftest.py`.
 - First boot on an empty volume copies seed/ in. Later boots only ADD new seed ids; applied_* is copied only if missing.
 
 ## How layout changes work

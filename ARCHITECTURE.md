@@ -70,7 +70,7 @@ The server layout is `layout/server.yaml`; the bot keeps "layout key -> Discord 
 and the yaml's names/topics at the last apply in `applied_<guild>.json`, both in `STATE` (`asbot/paths.py`):
 the volume (`/data/state`) on Railway. **The volume is the truth.**
 
-1. Edit `layout/server.yaml` (keep `key`; add old names to `was`), `railway up --detach`.
+1. Edit `layout/server.yaml` (keep `key`; add old names to `was`), commit + `git push` (= deploy).
 2. In Discord: `/layout preview`, read every line, then `/layout apply` (runs ON Railway).
 3. Before changing anything, apply saves the current values of everything the plan touches (names, topics,
    every overwrite with its target and type, role settings, positions) to `/data/backups/layout_<utc>.json`;
@@ -130,6 +130,6 @@ what was offered, so a key the volume dropped is not brought back), and nothing 
 - Channels/roles: look up by layout key (`core.channel(guild, "inbox")`), never by name or id. The ids file is
   cached in memory and re-read only when it changes on disk.
 - Long-lived buttons: persistent `custom_id` (`asbot:<feature>:...`), registered in the cog's `__init__`.
-- Deploy: `railway up --detach` from this folder. Layout changes: see "Layout changes" above.
+- Deploy: commit + `git push` to master (Railway deploys from the GitHub repo). Layout changes: see "Layout changes" above.
 - Tests: `.venv\Scripts\python tests\<file>.py` for each file in `tests/` (or `pytest tests` after
   `pip install -r requirements-dev.txt`). Nothing in `tests/` connects to Discord.
